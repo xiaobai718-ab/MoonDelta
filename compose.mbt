@@ -2,9 +2,16 @@
 /// Apply `next` after this Delta. A document composed with a change yields a
 /// new document; composing two changes yields one equivalent change.
 pub fn Delta::compose(self : Delta, next : Delta) -> Delta raise DeltaError {
-  if self.has_embed_retain() || next.has_embed_retain() {
-    raise Invalid("embed retain updates require a type-specific handler")
-  }
+  self.compose_with_handlers(next, EmbedHandlers::new())
+}
+
+///|
+/// Compose using registered, type-specific embed payload algorithms.
+pub fn Delta::compose_with_handlers(
+  self : Delta,
+  next : Delta,
+  handlers : EmbedHandlers,
+) -> Delta raise DeltaError {
   let left = OpIterator::new(self.ops)
   let right = OpIterator::new(next.ops)
   let result = Delta::new()
@@ -31,7 +38,7 @@ pub fn Delta::compose(self : Delta, next : Delta) -> Delta raise DeltaError {
         let attrs = attributes_compose(
           a.attributes(),
           b_attrs,
-          a.kind() == "retain",
+          a is Retain(_, _),
         )
         match a {
           InsertText(text, _) => ignore(result.push(InsertText(text, attrs)))
@@ -43,7 +50,30 @@ pub fn Delta::compose(self : Delta, next : Delta) -> Delta raise DeltaError {
           Delete(_) => ()
         }
       }
-      RetainEmbed(_, _) => ()
+      RetainEmbed(next_embed, next_attrs) => {
+        let attrs = attributes_compose(
+          a.attributes(),
+          next_attrs,
+          a is Retain(_, _),
+        )
+        match a {
+          Retain(_, _) => ignore(result.push(RetainEmbed(next_embed, attrs)))
+          InsertEmbed(original, _) => {
+            let (kind, old_data, change_data) = embed_parts(original, next_embed)
+            let handler = handlers.require(kind)
+            let data = (handler.compose_value)(old_data, change_data, false)
+            ignore(result.push(InsertEmbed(wrap_embed(kind, data), attrs)))
+          }
+          RetainEmbed(original, _) => {
+            let (kind, old_data, change_data) = embed_parts(original, next_embed)
+            let handler = handlers.require(kind)
+            let data = (handler.compose_value)(old_data, change_data, true)
+            ignore(result.push(RetainEmbed(wrap_embed(kind, data), attrs)))
+          }
+          InsertText(_, _) => raise Invalid("cannot retain a text insert with an embed update")
+          Delete(_) => ()
+        }
+      }
       Delete(_) =>
         match a {
           Retain(_, _) | RetainEmbed(_, _) =>
@@ -59,6 +89,15 @@ pub fn Delta::compose(self : Delta, next : Delta) -> Delta raise DeltaError {
 ///|
 /// Apply a change to a full insert-only document.
 pub fn Delta::apply(self : Delta, change : Delta) -> Delta raise DeltaError {
+  self.apply_with_handlers(change, EmbedHandlers::new())
+}
+
+///|
+pub fn Delta::apply_with_handlers(
+  self : Delta,
+  change : Delta,
+  handlers : EmbedHandlers,
+) -> Delta raise DeltaError {
   if !self.is_document() {
     raise Invalid("apply requires an insert-only document")
   }
@@ -73,7 +112,7 @@ pub fn Delta::apply(self : Delta, change : Delta) -> Delta raise DeltaError {
   if consumed > self.length() {
     raise Invalid("change consumes beyond the document")
   }
-  let result = self.compose(change)
+  let result = self.compose_with_handlers(change, handlers)
   if !result.is_document() {
     raise Invalid("change did not produce a document")
   }

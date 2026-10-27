@@ -30,11 +30,13 @@ try {
       $bundle = Join-Path $moonRoot "lib\core\_build\$target\release\bundle"
       & moonc check -no-mi -target $target -pkg 'xiaobai718-ab/moondelta' `
         -pkg-type library -std-path $bundle `
-        -i "$(Join-Path $bundle 'json\json.mi'):json" @sourceFiles
+        -i "$(Join-Path $bundle 'json\json.mi'):json" `
+        -i "$(Join-Path $bundle 'diff\diff.mi'):diff" @sourceFiles
       Confirm-Exit "check $target"
       & moonc check -no-mi -whitebox-test -target $target `
         -pkg 'xiaobai718-ab/moondelta' -pkg-type library -std-path $bundle `
-        -i "$(Join-Path $bundle 'json\json.mi'):json" @sourceFiles @whiteboxFiles
+        -i "$(Join-Path $bundle 'json\json.mi'):json" `
+        -i "$(Join-Path $bundle 'diff\diff.mi'):diff" @sourceFiles @whiteboxFiles
       Confirm-Exit "check tests $target"
     }
   }

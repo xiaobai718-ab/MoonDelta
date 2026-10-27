@@ -1,24 +1,24 @@
 ///|
 /// Internal cursor over operations. It splits text using UTF-16 offsets, the
 /// same unit used by Quill's JavaScript implementation.
-priv struct OpIterator {
+pub struct OpIterator {
   ops : Array[Op]
   mut index : Int32
   mut offset : Int32
 }
 
 ///|
-fn OpIterator::new(ops : Array[Op]) -> OpIterator {
+pub fn OpIterator::new(ops : Array[Op]) -> OpIterator {
   { ops, index: 0, offset: 0, }
 }
 
 ///|
-fn OpIterator::has_next(self : OpIterator) -> Bool {
+pub fn OpIterator::has_next(self : OpIterator) -> Bool {
   self.index < self.ops.length()
 }
 
 ///|
-fn OpIterator::peek(self : OpIterator) -> Op? {
+pub fn OpIterator::peek(self : OpIterator) -> Op? {
   if self.has_next() {
     Some(self.ops[self.index])
   } else {
@@ -27,7 +27,7 @@ fn OpIterator::peek(self : OpIterator) -> Op? {
 }
 
 ///|
-fn OpIterator::peek_length(self : OpIterator) -> Int32 {
+pub fn OpIterator::peek_length(self : OpIterator) -> Int32 {
   if self.has_next() {
     self.ops[self.index].length() - self.offset
   } else {
@@ -36,7 +36,7 @@ fn OpIterator::peek_length(self : OpIterator) -> Int32 {
 }
 
 ///|
-fn OpIterator::peek_kind(self : OpIterator) -> String {
+pub fn OpIterator::peek_kind(self : OpIterator) -> String {
   if self.has_next() {
     self.ops[self.index].kind()
   } else {
@@ -45,7 +45,7 @@ fn OpIterator::peek_kind(self : OpIterator) -> String {
 }
 
 ///|
-fn OpIterator::next(self : OpIterator, requested : Int32) -> Op {
+pub fn OpIterator::next(self : OpIterator, requested : Int32) -> Op {
   if !self.has_next() {
     return Retain(2147483647, empty_attributes())
   }
@@ -70,7 +70,7 @@ fn OpIterator::next(self : OpIterator, requested : Int32) -> Op {
 }
 
 ///|
-fn OpIterator::rest(self : OpIterator) -> Array[Op] {
+pub fn OpIterator::rest(self : OpIterator) -> Array[Op] {
   let out : Array[Op] = []
   while self.has_next() {
     out.push(self.next(self.peek_length()))
@@ -92,4 +92,10 @@ pub fn Delta::slice(self : Delta, start : Int32, end : Int32) -> Delta {
     index += op.length()
   }
   result
+}
+
+///|
+/// Return a cursor over a copy of the operation list.
+pub fn Delta::iterator(self : Delta) -> OpIterator {
+  OpIterator::new(self.operations())
 }

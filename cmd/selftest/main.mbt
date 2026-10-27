@@ -6,6 +6,14 @@ fn check(label : String, success : Bool) -> Unit {
 }
 
 ///|
+fn json_number(value : Json) -> Double {
+  match value {
+    Number(number, ..) => number
+    _ => 0.0
+  }
+}
+
+///|
 fn main raise {
   let base = @lib.Delta::new().insert_plain("abcd")
   check("plain text", base.plain_text() == Some("abcd"))
@@ -103,6 +111,108 @@ fn main raise {
     history.redo() && history.document().plain_text() == Some("aXYd"),
   )
   check("history revision", history.revision() == 3)
+  let handlers = @lib.EmbedHandlers::new()
+  handlers.register(
+    "counter",
+    @lib.EmbedHandler::new(
+      (base_value, update, _) => {
+        Json::number(json_number(base_value) + json_number(update))
+      },
+      (update, _) => Json::number(-json_number(update)),
+      (_, other, _) => other,
+    ),
+  )
+  let counter_base = @lib.Delta::new().insert_embed(
+    Json::object({ "counter": Json::number(5) }),
+    @lib.empty_attributes(),
+  )
+  let counter_update = @lib.Delta::new().retain_embed(
+    Json::object({ "counter": Json::number(2) }),
+    @lib.empty_attributes(),
+  )
+  let counter_changed = counter_base.apply_with_handlers(
+    counter_update, handlers,
+  )
+  check(
+    "embed handler compose",
+    counter_changed ==
+    @lib.Delta::new().insert_embed(
+      Json::object({ "counter": Json::number(7) }),
+      @lib.empty_attributes(),
+    ),
+  )
+  check(
+    "embed handler invert",
+    counter_changed.apply_with_handlers(
+      counter_update.invert_with_handlers(counter_base, handlers),
+      handlers,
+    ) ==
+    counter_base,
+  )
+  let seen_lines : Array[String] = []
+  let seen_line_attrs : Array[Json] = []
+  line_doc.each_line((line, attrs, index) => {
+    let text = match line.plain_text() {
+      Some(value) => value
+      None => ""
+    }
+    seen_lines.push(index.to_string() + ":" + text)
+    seen_line_attrs.push(attrs)
+    true
+  })
+  check("each_line count", seen_lines == ["0:Title", "1:body"])
+  check("each_line format", seen_line_attrs[0] == heading)
+  let custom_lines : Array[String] = []
+  @lib.Delta::new()
+  .insert_plain("one|two|three")
+  .each_line(
+    (line, _, _) => {
+      match line.plain_text() {
+        Some(value) => custom_lines.push(value)
+        None => ()
+      }
+      true
+    },
+    newline="|",
+  )
+  check("custom newline", custom_lines == ["one", "two", "three"])
+  let interior = "m".repeat(1500)
+  let separated_before = @lib.Delta::new().insert_plain("A" + interior + "B")
+  let separated_after = @lib.Delta::new().insert_plain("X" + interior + "Y")
+  let separated_patch = separated_before.diff(separated_after)
+  check(
+    "large separated diff",
+    separated_before.apply(separated_patch) == separated_after,
+  )
+  let mut max_delete = 0
+  for op in separated_patch.operations() {
+    if op.kind() == "delete" && op.length() > max_delete {
+      max_delete = op.length()
+    }
+  }
+  check("large diff retains interior", max_delete == 1)
+  let repeated = @lib.Delta::new().insert_plain("aaa")
+  let repeated_longer = @lib.Delta::new().insert_plain("aaaa")
+  check(
+    "cursor-aware insert",
+    repeated.diff_at(repeated_longer, 2) ==
+    @lib.Delta::new().retain_plain(1).insert_plain("a"),
+  )
+  check(
+    "cursor-aware delete",
+    repeated_longer.diff_at(repeated, 1) ==
+    @lib.Delta::new().retain_plain(1).delete(1),
+  )
+  let non_document_lines : Array[@lib.Delta] = []
+  @lib.Delta::new().retain_plain(2).each_line((line, _, _) => {
+    non_document_lines.push(line)
+    true
+  })
+  check("non-document has no lines", non_document_lines.is_empty())
+  let iterator = @lib.Delta::new().insert_plain("abc").iterator()
+  check("iterator peek", iterator.peek_length() == 3)
+  check("iterator split", iterator.next(1).length() == 1)
+  check("iterator rest", iterator.rest().length() == 1 && !iterator.has_next())
   let mut ot_cases = 0
   for text in ["", "a", "ab", "abc", "abcd"] {
     let document = @lib.Delta::new().insert_plain(text)

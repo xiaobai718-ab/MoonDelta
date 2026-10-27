@@ -1,17 +1,19 @@
 # MoonDelta
 
-MoonDelta is a pure MoonBit implementation of the [Quill Delta](https://quilljs.com/docs/delta) rich-text change format. It provides a reusable format and editing engine for MoonBit applications on native, JavaScript, Wasm, and Wasm GC targets. It has no browser, GUI, or external editor dependency.
+MoonDelta is a MoonBit implementation of the [Quill Delta](https://quilljs.com/docs/delta) rich-text document and change format. The library works on Native, JavaScript, Wasm, and Wasm GC without an editor UI or an external runtime.
 
-## What works
+## Supported operations
 
-- Read and write Quill-style `{ "ops": [...] }` JSON, including text, embeds, retains, deletes, and arbitrary formatting attributes.
-- Normalize adjacent operations and keep inserts before deletes at the same position.
-- Compose consecutive changes, apply them to a document, transform concurrent changes, and transform cursor positions.
-- Invert a change against its original document for undo, and calculate a change between two full documents.
-- Split a document into rich-text lines with newline attributes kept as block formats.
-- Keep a bounded local undo/redo history.
+- Parse and serialize Quill-style `{"ops":[...]}` JSON with text, embeds, formatting attributes, numeric and embed retains, and deletions.
+- Build canonical operation lists with `insert_text`, `insert_embed`, `retain`, `retain_embed`, `delete`, `push`, `chop`, and `concat`.
+- Compose changes, apply them to full documents, invert changes for undo, transform concurrent changes, and transform cursor positions.
+- Diff documents with Myers diff; `diff_at` uses a cursor hint to place a single ambiguous insertion or deletion near the edit position.
+- Visit operations with `filter`, `for_each`, `map`, `partition`, and `reduce`; use `OpIterator` for partial operations.
+- Visit rich-text lines with `each_line`, including delimiter attributes, custom delimiter, and early stop. `lines` returns line records.
+- Register type-specific `EmbedHandler` algorithms for composing, inverting, and transforming retain-embed payload updates.
+- Maintain a bounded local `History` for undo and redo.
 
-All positions and lengths use UTF-16 code units, matching JavaScript and Quill. A Unicode scalar outside the BMP, such as an emoji, has length two. The diff algorithm keeps surrogate pairs intact.
+Positions and lengths use UTF-16 code units, matching Quill. Diff treats Unicode scalar values and embeds as indivisible units.
 
 ## Example
 
@@ -32,17 +34,48 @@ ignore(history.undo())
 ignore(history.redo())
 ```
 
-The runnable example is in [`cmd/main/main.mbt`](cmd/main/main.mbt). The self-test program is in [`cmd/selftest/main.mbt`](cmd/selftest/main.mbt).
+Embedded payload updates require a registered handler for that embed type:
+
+```moonbit
+fn counter_value(value : Json) -> Double {
+  match value {
+    Number(number, ..) => number
+    _ => 0.0
+  }
+}
+
+let handlers = EmbedHandlers::new()
+handlers.register(
+  "counter",
+  EmbedHandler::new(
+    (base, update, _) =>
+      Json::number(counter_value(base) + counter_value(update)),
+    (update, _) => Json::number(-counter_value(update)),
+    (_, other, _) => other,
+  ),
+)
+let base = Delta::new().insert_embed(
+  Json::object({ "counter": Json::number(5) }),
+  empty_attributes(),
+)
+let increment = Delta::new().retain_embed(
+  Json::object({ "counter": Json::number(2) }),
+  empty_attributes(),
+)
+let changed = base.apply_with_handlers(increment, handlers)
+```
+
+The runnable example is in [cmd/main/main.mbt](cmd/main/main.mbt); the executable checks are in [cmd/selftest/main.mbt](cmd/selftest/main.mbt).
 
 ## Install and verify
 
-Add the Mooncake to a MoonBit project after it is published:
+After publication to Mooncakes:
 
 ```text
 moon add xiaobai718-ab/moondelta
 ```
 
-Normal validation on a supported MoonBit installation:
+On a supported MoonBit installation:
 
 ```text
 moon check --target native
@@ -53,20 +86,16 @@ moon test
 moon run cmd/main
 ```
 
-With the MoonBit 2026-10-16 toolchain on some Windows paths, `moon check`, `moon info`, `moon fmt`, and `moon test` can fail before checking source because the compiler cannot create a `\\?\` output path. The repository includes a direct-compiler workaround that checks all four targets and runs 121 text-diff pairs, 410 operational-transform pairs, and other behavior checks:
+The MoonBit 2026-10-16 Windows toolchain can fail while creating a `\\?\` output path for `moon check`, `moon test`, `moon info`, and `moon fmt` in this workspace. The direct compiler script checks the library and whitebox test sources on all four targets, then runs the JavaScript selftest (121 text-diff pairs, 410 concurrent-transform pairs, and focused API checks):
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1
 ```
 
-## Compatibility scope
+## Compatibility notes
 
-MoonDelta follows the Quill Delta JSON model and core text algorithms. An insert-only Delta is a document; a Delta containing retain/delete operations is a change. `apply`, `diff`, `invert`, and `lines` validate where a full document is required.
-
-Embedded object inserts round-trip and can be added or removed using insert/delete changes. Quill 5's type-specific **retain-embed payload updates** are not yet implemented. `invert` rejects those updates because they need an embed handler to recover the previous value. Consumers needing that operation should express replacement as delete plus insert for now.
-
-Diff keeps common prefixes and suffixes and uses a bounded longest-common-subsequence matrix for the edited middle. When the middle would exceed one million matrix cells, it emits a correct replacement change rather than a minimal one. History is local undo/redo; it does not rebase stored inverses over incoming remote changes.
+The implementation follows the Quill Delta 5.1 API and JSON semantics, with MoonBit names and explicit handler registries. `Delta::from_json` validates input and normalizes operations, while the JavaScript upstream constructor assumes well-formed input. The `diff_at` cursor hint targets a single pure insertion or deletion; other differences use Myers diff, so the exact edit script can differ from upstream `fast-diff` while producing the same document. The library does not include rendering, a GUI, network synchronization, or CRDT. `History` is local undo/redo and does not rebase stored inverses over remote edits.
 
 ## License
 
-MoonDelta is Apache-2.0 licensed. Quill Delta is a separate BSD-3-Clause project. Its license notice is reproduced in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+MoonDelta is Apache-2.0 licensed. Quill Delta is a separate BSD-3-Clause project. Its notice is reproduced in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

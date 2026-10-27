@@ -6,9 +6,17 @@ pub fn Delta::transform(
   other : Delta,
   priority : Bool,
 ) -> Delta raise DeltaError {
-  if self.has_embed_retain() || other.has_embed_retain() {
-    raise Invalid("embed retain updates require a type-specific handler")
-  }
+  self.transform_with_handlers(other, priority, EmbedHandlers::new())
+}
+
+///|
+/// Transform concurrent changes using registered embed payload algorithms.
+pub fn Delta::transform_with_handlers(
+  self : Delta,
+  other : Delta,
+  priority : Bool,
+  handlers : EmbedHandlers,
+) -> Delta raise DeltaError {
   let left = OpIterator::new(self.ops)
   let right = OpIterator::new(other.ops)
   let result = Delta::new()
@@ -32,7 +40,27 @@ pub fn Delta::transform(
     }
     match b {
       Delete(_) => ignore(result.delete(amount))
-      RetainEmbed(_, _) => ()
+      RetainEmbed(embed, attrs) => {
+        let mut transformed_embed = embed
+        match a {
+          RetainEmbed(own_embed, _) => {
+            let parts = embed_parts(own_embed, embed) catch {
+              _ => ("", Json::null(), Json::null())
+            }
+            let (kind, own_data, other_data) = parts
+            if kind != "" {
+              let handler = handlers.require(kind)
+              transformed_embed = wrap_embed(
+                kind,
+                (handler.transform_value)(own_data, other_data, priority),
+              )
+            }
+          }
+          _ => ()
+        }
+        let transformed = attributes_transform(a.attributes(), attrs, priority)
+        ignore(result.retain_embed(transformed_embed, transformed))
+      }
       Retain(_, attrs) => {
         let transformed = attributes_transform(a.attributes(), attrs, priority)
         ignore(result.retain(amount, transformed))

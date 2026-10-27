@@ -292,13 +292,13 @@ test "history bounds the undo stack" {
 }
 
 ///|
-test "operation visitors report cumulative offsets" {
+test "operation visitors report operation indexes" {
   let delta = Delta::new().insert_plain("ab").retain_plain(3).delete(1)
-  let offsets = delta.map((_, offset) => offset)
-  assert_eq(offsets, [0, 2, 5])
+  let indexes = delta.map((_, index) => index)
+  assert_eq(indexes, [0, 1, 2])
   let deletions = delta.filter((op, _) => op.kind() == "delete")
   assert_eq(deletions.length(), 1)
-  let (accepted, rejected) = delta.partition((_, offset) => offset < 3)
+  let (accepted, rejected) = delta.partition(op => op.kind() != "delete")
   assert_eq(accepted.length(), 2)
   assert_eq(rejected.length(), 1)
   assert_eq(delta.reduce(0, (sum, op, _) => sum + op.length()), 6)
@@ -314,4 +314,169 @@ test "embed retain update is rejected until a handler exists" {
     _ => failed = true
   }
   assert_true(failed)
+}
+
+///|
+fn counter_number(value : Json) -> Double raise DeltaError {
+  match value {
+    Number(number, ..) => number
+    _ => raise Invalid("counter embed must be a number")
+  }
+}
+
+///|
+fn counter_handlers() -> EmbedHandlers raise DeltaError {
+  let handlers = EmbedHandlers::new()
+  handlers.register(
+    "counter",
+    EmbedHandler::new(
+      (base, update, _) => Json::number(counter_number(base) + counter_number(update)),
+      (update, _) => Json::number(-counter_number(update)),
+      (_, other, _) => other,
+    ),
+  )
+  handlers
+}
+
+///|
+test "registered embed handler composes and inverts updates" {
+  let handlers = counter_handlers()
+  let base = Delta::new().insert_embed(
+    Json::object({ "counter": Json::number(5) }),
+    empty_attributes(),
+  )
+  let update = Delta::new().retain_embed(
+    Json::object({ "counter": Json::number(2) }),
+    empty_attributes(),
+  )
+  let changed = base.apply_with_handlers(update, handlers)
+  let expected = Delta::new().insert_embed(
+    Json::object({ "counter": Json::number(7) }),
+    empty_attributes(),
+  )
+  assert_eq(changed, expected)
+  let inverse = update.invert_with_handlers(base, handlers)
+  assert_eq(changed.apply_with_handlers(inverse, handlers), base)
+}
+
+///|
+test "registered embed handler transforms concurrent updates" {
+  let handlers = counter_handlers()
+  let base = Delta::new().insert_embed(
+    Json::object({ "counter": Json::number(5) }),
+    empty_attributes(),
+  )
+  let first = Delta::new().retain_embed(
+    Json::object({ "counter": Json::number(2) }),
+    empty_attributes(),
+  )
+  let second = Delta::new().retain_embed(
+    Json::object({ "counter": Json::number(3) }),
+    empty_attributes(),
+  )
+  let left = base.apply_with_handlers(first, handlers)
+    .apply_with_handlers(first.transform_with_handlers(second, true, handlers), handlers)
+  let right = base.apply_with_handlers(second, handlers)
+    .apply_with_handlers(second.transform_with_handlers(first, false, handlers), handlers)
+  assert_eq(left, right)
+  assert_eq(left.operations()[0].attributes(), empty_attributes())
+}
+
+///|
+test "each_line keeps delimiter attributes and can stop early" {
+  let heading = Json::object({ "header": Json::number(2) })
+  let doc = Delta::new()
+    .insert_plain("Title")
+    .insert_text("\n", heading)
+    .insert_plain("body\nend")
+  let seen : Array[String] = []
+  let seen_attrs : Array[Json] = []
+  doc.each_line((line, attrs, index) => {
+    seen.push(index.to_string() + ":" + line_text_for_test(line))
+    seen_attrs.push(attrs)
+    true
+  })
+  assert_eq(seen, ["0:Title", "1:body", "2:end"])
+  assert_eq(seen_attrs[0], heading)
+  let stopped : Array[String] = []
+  doc.each_line((line, _, _) => {
+    stopped.push(line_text_for_test(line))
+    false
+  })
+  assert_eq(stopped, ["Title"])
+}
+
+///|
+test "each_line accepts custom delimiter and embedded objects" {
+  let embed = Json::object({ "image": Json::string("picture") })
+  let doc = Delta::new()
+    .insert_plain("a")
+    .insert_embed(embed, empty_attributes())
+    .insert_plain("|b|")
+  let seen : Array[Delta] = []
+  doc.each_line((line, _, _) => {
+    seen.push(line)
+    true
+  }, newline="|")
+  assert_eq(seen.length(), 2)
+  assert_eq(seen[0], Delta::new().insert_plain("a").insert_embed(embed, empty_attributes()))
+  assert_eq(seen[1].plain_text(), Some("b"))
+}
+
+///|
+test "large separated diff keeps unchanged interior" {
+  let middle = "m".repeat(1500)
+  let before = Delta::new().insert_plain("A" + middle + "B")
+  let after = Delta::new().insert_plain("X" + middle + "Y")
+  let patch = before.diff(after)
+  assert_eq(before.apply(patch), after)
+  let mut max_delete = 0
+  for op in patch.operations() {
+    if op.kind() == "delete" && op.length() > max_delete {
+      max_delete = op.length()
+    }
+  }
+  assert_eq(max_delete, 1)
+}
+
+
+///|
+fn line_text_for_test(line : Delta) -> String {
+  match line.plain_text() {
+    Some(text) => text
+    None => ""
+  }
+}
+
+
+
+
+///|
+test "cursor-aware diff locates repeated-text insertion and deletion" {
+  let old = Delta::new().insert_plain("aaa")
+  let longer = Delta::new().insert_plain("aaaa")
+  let insertion = old.diff_at(longer, 2)
+  assert_eq(insertion, Delta::new().retain_plain(1).insert_plain("a"))
+  assert_eq(old.apply(insertion), longer)
+  let deletion = longer.diff_at(old, 1)
+  assert_eq(deletion, Delta::new().retain_plain(1).delete(1))
+  assert_eq(longer.apply(deletion), old)
+}
+
+///|
+test "operation iterator splits text and reports exhausted state" {
+  let delta = Delta::new().insert_plain("abc").insert_embed(
+    Json::object({ "image": Json::string("x") }),
+    empty_attributes(),
+  )
+  let iterator = delta.iterator()
+  assert_true(iterator.has_next())
+  assert_eq(iterator.peek_kind(), "insert")
+  assert_eq(iterator.peek_length(), 3)
+  assert_eq(iterator.next(1), InsertText("a", empty_attributes()))
+  assert_eq(iterator.peek_length(), 2)
+  assert_eq(iterator.next(2), InsertText("bc", empty_attributes()))
+  assert_eq(iterator.peek_length(), 1)
+  assert_eq(iterator.rest().length(), 1)
+  assert_true(!iterator.has_next())
 }

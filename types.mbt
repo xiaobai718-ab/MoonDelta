@@ -137,16 +137,6 @@ pub fn Delta::is_document(self : Delta) -> Bool {
 }
 
 ///|
-fn Delta::has_embed_retain(self : Delta) -> Bool {
-  for op in self.ops {
-    if op is RetainEmbed(_, _) {
-      return true
-    }
-  }
-  false
-}
-
-///|
 pub fn Delta::plain_text(self : Delta) -> String? {
   let builder = StringBuilder()
   for op in self.ops {
