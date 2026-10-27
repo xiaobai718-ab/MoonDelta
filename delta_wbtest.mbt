@@ -625,3 +625,135 @@ test "formatting and text operations converge under transformation" {
     }
   }
 }
+
+///|
+test "upstream compose primitive cases" {
+  let bold = Json::object({ "bold": Json::boolean(true) })
+  let red = Json::object({ "color": Json::string("red") })
+  assert_eq(
+    Delta::new().insert_plain("A").compose(Delta::new().insert_plain("B")),
+    Delta::new().insert_plain("BA"),
+  )
+  assert_eq(
+    Delta::new().insert_plain("A").compose(Delta::new().delete(1)),
+    Delta::new(),
+  )
+  assert_eq(
+    Delta::new().delete(1).compose(Delta::new().insert_plain("B")),
+    Delta::new().insert_plain("B").delete(1),
+  )
+  assert_eq(
+    Delta::new().delete(1).compose(Delta::new().delete(1)),
+    Delta::new().delete(2),
+  )
+  assert_eq(
+    Delta::new().retain(1, red).compose(Delta::new().delete(1)),
+    Delta::new().delete(1),
+  )
+  assert_eq(
+    Delta::new()
+    .insert_text("A", bold)
+    .compose(Delta::new().retain(1, Json::object({ "bold": Json::null() }))),
+    Delta::new().insert_plain("A"),
+  )
+  assert_eq(
+    Delta::new()
+    .insert_plain("Hello")
+    .compose(Delta::new().retain_plain(3).insert_plain("X")),
+    Delta::new().insert_plain("HelXlo"),
+  )
+}
+
+///|
+test "upstream compose retains beyond inserted text and embed attributes" {
+  let embed = Json::object({ "embed": Json::number(1) })
+  let source = Delta::new().insert_embed(
+    embed,
+    Json::object({ "src": Json::string("image.png") }),
+  )
+  let change = Delta::new().retain(
+    1,
+    Json::object({ "alt": Json::string("logo") }),
+  )
+  let expected = Delta::new().insert_embed(
+    embed,
+    Json::object({
+      "src": Json::string("image.png"),
+      "alt": Json::string("logo"),
+    }),
+  )
+  assert_eq(source.compose(change), expected)
+  assert_eq(
+    Delta::new().insert_plain("Hello").compose(Delta::new().retain_plain(10)),
+    Delta::new().insert_plain("Hello"),
+  )
+  assert_eq(
+    Delta::new()
+    .retain_plain(4)
+    .insert_plain("Hello")
+    .compose(Delta::new().delete(9)),
+    Delta::new().delete(4),
+  )
+}
+
+///|
+test "upstream transform alternating edits" {
+  let first = Delta::new().retain_plain(2).insert_plain("si").delete(5)
+  let second = Delta::new()
+    .retain_plain(1)
+    .insert_plain("e")
+    .delete(5)
+    .retain_plain(1)
+    .insert_plain("ow")
+  let expected_first = Delta::new()
+    .retain_plain(1)
+    .insert_plain("e")
+    .delete(1)
+    .retain_plain(2)
+    .insert_plain("ow")
+  let expected_second = Delta::new()
+    .retain_plain(2)
+    .insert_plain("si")
+    .delete(1)
+  assert_eq(first.transform(second, false), expected_first)
+  assert_eq(second.transform(first, false), expected_second)
+}
+
+///|
+test "upstream combined inversion restores formatted document" {
+  let bold = Json::object({ "bold": Json::boolean(true) })
+  let italic = Json::object({ "italic": Json::boolean(true) })
+  let red = Json::object({ "color": Json::string("red") })
+  let red_bold = Json::object({
+    "color": Json::string("red"),
+    "bold": Json::boolean(true),
+  })
+  let change = Delta::new()
+    .retain_plain(2)
+    .delete(2)
+    .insert_text("AB", italic)
+    .retain(
+      2,
+      Json::object({ "italic": Json::null(), "bold": Json::boolean(true) }),
+    )
+    .retain(2, red)
+    .delete(1)
+  let base = Delta::new()
+    .insert_text("123", bold)
+    .insert_text("456", italic)
+    .insert_text("789", red_bold)
+  let expected = Delta::new()
+    .retain_plain(2)
+    .insert_text("3", bold)
+    .insert_text("4", italic)
+    .delete(2)
+    .retain(
+      2,
+      Json::object({ "italic": Json::boolean(true), "bold": Json::null() }),
+    )
+    .retain_plain(2)
+    .insert_text("9", red_bold)
+  let inverse = change.invert(base)
+  assert_eq(inverse, expected)
+  assert_eq(base.apply(change).apply(inverse), base)
+}

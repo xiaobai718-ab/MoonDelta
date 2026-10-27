@@ -92,7 +92,7 @@ The MoonBit 2026-10-16 Windows toolchain can fail while creating a `\\?\` output
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1
 ```
 
-To execute the 47 whitebox tests on Native and JavaScript despite the Windows path issue, the following script copies project source files to a short temporary directory, runs both targets, and removes the copy:
+To execute the 51 whitebox tests on Native and JavaScript despite the Windows path issue, the following script copies project source files to a short temporary directory, runs both targets, and removes the copy:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-short-path.ps1
