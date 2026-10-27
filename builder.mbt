@@ -98,9 +98,12 @@ pub fn Delta::chop(self : Delta) -> Delta {
 
 ///|
 pub fn Delta::concat(self : Delta, other : Delta) -> Delta {
-  let result = Delta::from_ops(self.operations())
-  for op in other.ops {
-    ignore(result.push(op))
+  let result = Delta::from_ops_raw(self.operations())
+  if !other.ops.is_empty() {
+    ignore(result.push(other.ops[0]))
+    for index in 1..<other.ops.length() {
+      result.ops.push(other.ops[index])
+    }
   }
   result
 }

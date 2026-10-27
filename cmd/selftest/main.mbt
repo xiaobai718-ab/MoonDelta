@@ -195,7 +195,7 @@ fn main raise {
   let repeated_longer = @lib.Delta::new().insert_plain("aaaa")
   check(
     "cursor-aware insert",
-    repeated.diff_at(repeated_longer, 2) ==
+    repeated.diff_at(repeated_longer, 1) ==
     @lib.Delta::new().retain_plain(1).insert_plain("a"),
   )
   check(
@@ -204,7 +204,9 @@ fn main raise {
     @lib.Delta::new().retain_plain(1).delete(1),
   )
   let non_document_lines : Array[@lib.Delta] = []
-  @lib.Delta::new().retain_plain(2).each_line((line, _, _) => {
+  @lib.Delta::new()
+  .retain_plain(2)
+  .each_line((line, _, _) => {
     non_document_lines.push(line)
     true
   })

@@ -17,7 +17,7 @@ if (-not $absoluteTestDir.StartsWith(
 
 New-Item -ItemType Directory -Path $absoluteTestDir -Force | Out-Null
 try {
-  $tracked = & git -C $projectRoot ls-files
+  $tracked = & git -C $projectRoot ls-files --cached --others --exclude-standard
   if ($LASTEXITCODE -ne 0) {
     throw 'Could not list project files'
   }

@@ -85,6 +85,18 @@ pub fn Delta::from_ops(ops : Array[Op]) -> Delta {
 }
 
 ///|
+/// Construct a Delta from operations without normalizing their order or
+/// merging adjacent operations, matching Quill Delta's array constructor.
+/// Callers must supply well-formed operations.
+pub fn Delta::from_ops_raw(operations : Array[Op]) -> Delta {
+  let copy : Array[Op] = []
+  for operation in operations {
+    copy.push(operation)
+  }
+  { ops: copy, }
+}
+
+///|
 pub fn Delta::operations(self : Delta) -> Array[Op] {
   let copy : Array[Op] = []
   for op in self.ops {

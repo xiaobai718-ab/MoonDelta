@@ -99,3 +99,22 @@ pub fn Delta::slice(self : Delta, start : Int32, end : Int32) -> Delta {
 pub fn Delta::iterator(self : Delta) -> OpIterator {
   OpIterator::new(self.operations())
 }
+
+///|
+/// Slice from a UTF-16 offset through the end, corresponding to Quill's
+/// slice(start) overload.
+pub fn Delta::slice_from(self : Delta, start : Int32) -> Delta {
+  self.slice(start, self.length())
+}
+
+///|
+/// Return the whole Delta as a separate value, corresponding to slice().
+pub fn Delta::slice_all(self : Delta) -> Delta {
+  self.slice(0, self.length())
+}
+
+///|
+/// Consume the remaining part of the next operation.
+pub fn OpIterator::next_full(self : OpIterator) -> Op {
+  self.next(self.peek_length())
+}

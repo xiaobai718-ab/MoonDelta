@@ -7,7 +7,7 @@ MoonDelta is a MoonBit implementation of the [Quill Delta](https://quilljs.com/d
 - Parse and serialize Quill-style `{"ops":[...]}` JSON with text, embeds, formatting attributes, numeric and embed retains, and deletions.
 - Build canonical operation lists with `insert_text`, `insert_embed`, `retain`, `retain_embed`, `delete`, `push`, `chop`, and `concat`.
 - Compose changes, apply them to full documents, invert changes for undo, transform concurrent changes, and transform cursor positions.
-- Diff documents with Myers diff; `diff_at` uses a cursor hint to place a single ambiguous insertion or deletion near the edit position.
+- Diff documents with Myers diff; `diff_at` uses a UTF-16 cursor position in the original document, and `diff_with_cursor_info` accepts explicit old and new ranges.
 - Visit operations with `filter`, `for_each`, `map`, `partition`, and `reduce`; use `OpIterator` for partial operations.
 - Visit rich-text lines with `each_line`, including delimiter attributes, custom delimiter, and early stop. `lines` returns line records.
 - Register type-specific `EmbedHandler` algorithms for composing, inverting, and transforming retain-embed payload updates.
@@ -92,7 +92,7 @@ The MoonBit 2026-10-16 Windows toolchain can fail while creating a `\\?\` output
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1
 ```
 
-To execute the 38 whitebox tests on Native and JavaScript despite the Windows path issue, the following script copies tracked source files to a short temporary directory, runs both targets, and removes the copy:
+To execute the 47 whitebox tests on Native and JavaScript despite the Windows path issue, the following script copies project source files to a short temporary directory, runs both targets, and removes the copy:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-short-path.ps1
@@ -100,7 +100,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-short-path.ps
 
 ## Compatibility notes
 
-The implementation follows the Quill Delta 5.1 API and JSON semantics, with MoonBit names and explicit handler registries. `Delta::from_json` validates input and normalizes operations, while the JavaScript upstream constructor assumes well-formed input. The `diff_at` cursor hint targets a single pure insertion or deletion; other differences use Myers diff, so the exact edit script can differ from upstream `fast-diff` while producing the same document. The library does not include rendering, a GUI, network synchronization, or CRDT. `History` is local undo/redo and does not rebase stored inverses over remote edits.
+The implementation covers Quill Delta 5.1 core operations with MoonBit naming and explicit handler registries. `Delta::from_json` validates and normalizes input; `Delta::from_ops_raw` preserves the order of well-formed typed operations like the JavaScript constructor. A numeric `diff_at` hint is the cursor position before the edit and targets a single pure insertion or deletion. `diff_with_cursor_info` accepts `CursorInfo` containing old and new UTF-16 ranges. Both hint methods fall back to Myers diff when the supplied position or ranges cannot describe the edit. The exact edit script can differ from upstream `fast-diff` while producing the same document. The library does not include rendering, a GUI, network synchronization, or CRDT. `History` is local undo/redo and does not rebase stored inverses over remote edits.
+
+The current feature-by-feature status and remaining parity work are listed in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## License
 

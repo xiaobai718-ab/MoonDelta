@@ -43,8 +43,11 @@ test "invalid fractional length fails" {
 ///|
 test "oversized Delta length fails before integer overflow" {
   let mut failed = false
-  ignore(Delta::parse_json("{\"ops\":[{\"delete\":2147483647},{\"delete\":1}]}"))
-  catch { _ => failed = true }
+  ignore(
+    Delta::parse_json("{\"ops\":[{\"delete\":2147483647},{\"delete\":1}]}"),
+  ) catch {
+    _ => failed = true
+  }
   assert_true(failed)
 }
 
@@ -330,7 +333,9 @@ fn counter_handlers() -> EmbedHandlers raise DeltaError {
   handlers.register(
     "counter",
     EmbedHandler::new(
-      (base, update, _) => Json::number(counter_number(base) + counter_number(update)),
+      (base, update, _) => {
+        Json::number(counter_number(base) + counter_number(update))
+      },
       (update, _) => Json::number(-counter_number(update)),
       (_, other, _) => other,
     ),
@@ -374,10 +379,18 @@ test "registered embed handler transforms concurrent updates" {
     Json::object({ "counter": Json::number(3) }),
     empty_attributes(),
   )
-  let left = base.apply_with_handlers(first, handlers)
-    .apply_with_handlers(first.transform_with_handlers(second, true, handlers), handlers)
-  let right = base.apply_with_handlers(second, handlers)
-    .apply_with_handlers(second.transform_with_handlers(first, false, handlers), handlers)
+  let left = base
+    .apply_with_handlers(first, handlers)
+    .apply_with_handlers(
+      first.transform_with_handlers(second, true, handlers),
+      handlers,
+    )
+  let right = base
+    .apply_with_handlers(second, handlers)
+    .apply_with_handlers(
+      second.transform_with_handlers(first, false, handlers),
+      handlers,
+    )
   assert_eq(left, right)
   assert_eq(left.operations()[0].attributes(), empty_attributes())
 }
@@ -414,12 +427,18 @@ test "each_line accepts custom delimiter and embedded objects" {
     .insert_embed(embed, empty_attributes())
     .insert_plain("|b|")
   let seen : Array[Delta] = []
-  doc.each_line((line, _, _) => {
-    seen.push(line)
-    true
-  }, newline="|")
+  doc.each_line(
+    (line, _, _) => {
+      seen.push(line)
+      true
+    },
+    newline="|",
+  )
   assert_eq(seen.length(), 2)
-  assert_eq(seen[0], Delta::new().insert_plain("a").insert_embed(embed, empty_attributes()))
+  assert_eq(
+    seen[0],
+    Delta::new().insert_plain("a").insert_embed(embed, empty_attributes()),
+  )
   assert_eq(seen[1].plain_text(), Some("b"))
 }
 
@@ -439,7 +458,6 @@ test "large separated diff keeps unchanged interior" {
   assert_eq(max_delete, 1)
 }
 
-
 ///|
 fn line_text_for_test(line : Delta) -> String {
   match line.plain_text() {
@@ -448,14 +466,11 @@ fn line_text_for_test(line : Delta) -> String {
   }
 }
 
-
-
-
 ///|
 test "cursor-aware diff locates repeated-text insertion and deletion" {
   let old = Delta::new().insert_plain("aaa")
   let longer = Delta::new().insert_plain("aaaa")
-  let insertion = old.diff_at(longer, 2)
+  let insertion = old.diff_at(longer, 1)
   assert_eq(insertion, Delta::new().retain_plain(1).insert_plain("a"))
   assert_eq(old.apply(insertion), longer)
   let deletion = longer.diff_at(old, 1)
@@ -465,10 +480,12 @@ test "cursor-aware diff locates repeated-text insertion and deletion" {
 
 ///|
 test "operation iterator splits text and reports exhausted state" {
-  let delta = Delta::new().insert_plain("abc").insert_embed(
-    Json::object({ "image": Json::string("x") }),
-    empty_attributes(),
-  )
+  let delta = Delta::new()
+    .insert_plain("abc")
+    .insert_embed(
+      Json::object({ "image": Json::string("x") }),
+      empty_attributes(),
+    )
   let iterator = delta.iterator()
   assert_true(iterator.has_next())
   assert_eq(iterator.peek_kind(), "insert")
@@ -479,4 +496,132 @@ test "operation iterator splits text and reports exhausted state" {
   assert_eq(iterator.peek_length(), 1)
   assert_eq(iterator.rest().length(), 1)
   assert_true(!iterator.has_next())
+}
+
+///|
+test "upstream diff fixtures preserve attributes across operation boundaries" {
+  let bold = Json::object({ "bold": Json::boolean(true) })
+  let italic = Json::object({ "italic": Json::boolean(true) })
+  let red = Json::object({ "color": Json::string("red") })
+  let old = Delta::new().insert_text("12", bold).insert_text("34", italic)
+  let target = Delta::new().insert_text("123", red)
+  let expected = Delta::new()
+    .retain(
+      2,
+      Json::object({ "bold": Json::null(), "color": Json::string("red") }),
+    )
+    .retain(
+      1,
+      Json::object({ "italic": Json::null(), "color": Json::string("red") }),
+    )
+    .delete(1)
+  assert_eq(old.diff(target), expected)
+}
+
+///|
+test "upstream diff fixtures distinguish embed and NUL text" {
+  let embed = Json::object({ "embed": Json::number(1) })
+  let old = Delta::new().insert_embed(embed, empty_attributes())
+  let target = Delta::new().insert_plain("\u{0000}")
+  let expected = Delta::new().insert_plain("\u{0000}").delete(1)
+  assert_eq(old.diff(target), expected)
+}
+
+///|
+test "upstream diff fixtures replace changed embeds" {
+  let old = Delta::new().insert_embed(
+    Json::object({ "embed": Json::number(1) }),
+    empty_attributes(),
+  )
+  let target = Delta::new().insert_embed(
+    Json::object({ "embed": Json::number(2) }),
+    empty_attributes(),
+  )
+  let expected = Delta::new()
+    .insert_embed(
+      Json::object({ "embed": Json::number(2) }),
+      empty_attributes(),
+    )
+    .delete(1)
+  assert_eq(old.diff(target), expected)
+}
+
+///|
+test "cursor ranges locate a repeated-text insertion" {
+  let before = Delta::new().insert_plain("aaa")
+  let after = Delta::new().insert_plain("aaaa")
+  let cursor = CursorInfo::new(CursorRange::new(1, 0), CursorRange::new(1, 1))
+  let patch = before.diff_with_cursor_info(after, cursor)
+  assert_eq(patch, Delta::new().retain_plain(1).insert_plain("a"))
+  assert_eq(before.apply(patch), after)
+}
+
+///|
+test "cursor ranges locate a replacement" {
+  let before = Delta::new().insert_plain("abc")
+  let after = Delta::new().insert_plain("aXc")
+  let cursor = CursorInfo::new(CursorRange::new(1, 1), CursorRange::new(1, 1))
+  let patch = before.diff_with_cursor_info(after, cursor)
+  assert_eq(patch, Delta::new().retain_plain(1).insert_plain("X").delete(1))
+  assert_eq(before.apply(patch), after)
+}
+
+///|
+test "invalid cursor ranges fall back to a correct diff" {
+  let before = Delta::new().insert_plain("abc")
+  let after = Delta::new().insert_plain("aXc")
+  let cursor = CursorInfo::new(CursorRange::new(99, 1), CursorRange::new(99, 1))
+  let patch = before.diff_with_cursor_info(after, cursor)
+  assert_eq(before.apply(patch), after)
+}
+
+///|
+test "raw constructor and concat preserve noncanonical interior operations" {
+  let raw = Delta::from_ops_raw([
+    InsertText("a", empty_attributes()),
+    InsertText("b", empty_attributes()),
+  ])
+  assert_eq(raw.count(), 2)
+  let combined = raw.concat(Delta::new().insert_plain("c"))
+  assert_eq(combined.count(), 2)
+  assert_eq(combined.operations()[0], InsertText("a", empty_attributes()))
+  assert_eq(combined.operations()[1], InsertText("bc", empty_attributes()))
+  assert_eq(raw.count(), 2)
+}
+
+///|
+test "slice and iterator default-argument equivalents" {
+  let delta = Delta::new().insert_plain("abcd")
+  assert_eq(delta.slice_all(), delta)
+  assert_eq(delta.slice_from(2), Delta::new().insert_plain("cd"))
+  let iterator = delta.iterator()
+  assert_eq(iterator.next_full(), InsertText("abcd", empty_attributes()))
+  assert_true(!iterator.has_next())
+}
+
+///|
+test "formatting and text operations converge under transformation" {
+  let base = Delta::new().insert_plain("abc")
+  let bold = Json::object({ "bold": Json::boolean(true) })
+  let italic = Json::object({ "italic": Json::boolean(true) })
+  let clear_bold = Json::object({ "bold": Json::null() })
+  let changes : Array[Delta] = []
+  for position in 0..<=3 {
+    changes.push(Delta::new().retain_plain(position).insert_plain("X"))
+    changes.push(Delta::new().retain_plain(position).insert_text("Y", bold))
+    if position < 3 {
+      changes.push(Delta::new().retain_plain(position).delete(1))
+      changes.push(Delta::new().retain_plain(position).retain(1, bold))
+      changes.push(Delta::new().retain_plain(position).retain(1, italic))
+      changes.push(Delta::new().retain_plain(position).retain(1, clear_bold))
+    }
+  }
+  for first in changes {
+    assert_eq(base.apply(first).apply(first.invert(base)), base)
+    for second in changes {
+      let left = base.apply(first).apply(first.transform(second, true))
+      let right = base.apply(second).apply(second.transform(first, false))
+      assert_eq(left, right)
+    }
+  }
 }

@@ -1,0 +1,166 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "xiaobai718-ab/moondelta"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn attributes_compose(Json, Json, Bool) -> Json
+
+pub fn attributes_diff(Json, Json) -> Json
+
+pub fn attributes_invert(Json, Json) -> Json
+
+pub fn attributes_transform(Json, Json, Bool) -> Json
+
+pub fn empty_attributes() -> Json
+
+// Errors
+pub suberror DeltaError {
+  Invalid(String)
+} derive(@debug.Debug)
+pub fn DeltaError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub(all) struct CursorInfo {
+  old_range : CursorRange
+  new_range : CursorRange
+}
+pub fn CursorInfo::new(CursorRange, CursorRange) -> Self
+
+pub(all) struct CursorRange {
+  index : Int32
+  length : Int32
+}
+pub fn CursorRange::new(Int32, Int32) -> Self
+
+pub(all) struct Delta {
+  mut ops : Array[Op]
+} derive(Eq, @debug.Debug)
+pub fn Delta::apply(Self, Self) -> Self raise DeltaError
+pub fn Delta::apply_with_handlers(Self, Self, EmbedHandlers) -> Self raise DeltaError
+pub fn Delta::change_length(Self) -> Int32
+pub fn Delta::chop(Self) -> Self
+pub fn Delta::compose(Self, Self) -> Self raise DeltaError
+pub fn Delta::compose_with_handlers(Self, Self, EmbedHandlers) -> Self raise DeltaError
+pub fn Delta::concat(Self, Self) -> Self
+pub fn Delta::count(Self) -> Int32
+pub fn Delta::delete(Self, Int32) -> Self
+pub fn Delta::diff(Self, Self) -> Self raise DeltaError
+pub fn Delta::diff_at(Self, Self, Int32) -> Self raise DeltaError
+pub fn Delta::diff_with_cursor_info(Self, Self, CursorInfo) -> Self raise DeltaError
+pub fn Delta::each_line(Self, (Self, Json, Int32) -> Bool, newline? : String) -> Unit raise DeltaError
+pub fn Delta::equal(Self, Self) -> Bool
+pub fn Delta::filter(Self, (Op, Int32) -> Bool) -> Array[Op]
+pub fn Delta::for_each(Self, (Op, Int32) -> Unit) -> Unit
+pub fn Delta::from_json(Json) -> Self raise DeltaError
+pub fn Delta::from_ops(Array[Op]) -> Self
+pub fn Delta::from_ops_raw(Array[Op]) -> Self
+pub fn Delta::insert_embed(Self, Json, Json) -> Self
+pub fn Delta::insert_plain(Self, String) -> Self
+pub fn Delta::insert_text(Self, String, Json) -> Self
+pub fn Delta::invert(Self, Self) -> Self raise DeltaError
+pub fn Delta::invert_with_handlers(Self, Self, EmbedHandlers) -> Self raise DeltaError
+pub fn Delta::is_document(Self) -> Bool
+pub fn Delta::is_empty(Self) -> Bool
+pub fn Delta::iterator(Self) -> OpIterator
+pub fn Delta::length(Self) -> Int32
+pub fn Delta::line_count(Self) -> Int32 raise DeltaError
+pub fn Delta::lines(Self) -> Array[DeltaLine] raise DeltaError
+pub fn[T] Delta::map(Self, (Op, Int32) -> T) -> Array[T]
+pub fn Delta::new() -> Self
+pub fn Delta::not_equal(Self, Self) -> Bool
+pub fn Delta::operations(Self) -> Array[Op]
+pub fn Delta::parse_json(String) -> Self raise DeltaError
+pub fn Delta::partition(Self, (Op) -> Bool) -> (Array[Op], Array[Op])
+pub fn Delta::plain_text(Self) -> String?
+pub fn Delta::push(Self, Op) -> Self
+pub fn[T] Delta::reduce(Self, T, (T, Op, Int32) -> T) -> T
+pub fn Delta::retain(Self, Int32, Json) -> Self
+pub fn Delta::retain_embed(Self, Json, Json) -> Self
+pub fn Delta::retain_plain(Self, Int32) -> Self
+pub fn Delta::slice(Self, Int32, Int32) -> Self
+pub fn Delta::slice_all(Self) -> Self
+pub fn Delta::slice_from(Self, Int32) -> Self
+pub fn Delta::stringify(Self) -> String
+pub fn Delta::to_json(Self) -> Json
+pub fn Delta::to_repr(Self) -> @debug.Repr
+pub fn Delta::transform(Self, Self, Bool) -> Self raise DeltaError
+pub fn Delta::transform_position(Self, Int32, Bool) -> Int32
+pub fn Delta::transform_with_handlers(Self, Self, Bool, EmbedHandlers) -> Self raise DeltaError
+
+pub(all) struct DeltaLine {
+  content : Delta
+  attributes : Json
+  start : Int32
+  terminated : Bool
+} derive(Eq, @debug.Debug)
+pub fn DeltaLine::equal(Self, Self) -> Bool
+pub fn DeltaLine::not_equal(Self, Self) -> Bool
+pub fn DeltaLine::to_repr(Self) -> @debug.Repr
+
+pub struct EmbedHandler {
+  compose_value : (Json, Json, Bool) -> Json raise DeltaError
+  invert_value : (Json, Json) -> Json raise DeltaError
+  transform_value : (Json, Json, Bool) -> Json raise DeltaError
+}
+pub fn EmbedHandler::new((Json, Json, Bool) -> Json raise DeltaError, (Json, Json) -> Json raise DeltaError, (Json, Json, Bool) -> Json raise DeltaError) -> Self
+
+pub struct EmbedHandlers {
+  handlers : Map[String, EmbedHandler]
+}
+pub fn EmbedHandlers::contains(Self, String) -> Bool
+pub fn EmbedHandlers::new() -> Self
+pub fn EmbedHandlers::register(Self, String, EmbedHandler) -> Unit raise DeltaError
+pub fn EmbedHandlers::unregister(Self, String) -> Unit
+
+pub struct History {
+  mut document : Delta
+  undo_stack : Array[Delta]
+  mut redo_stack : Array[Delta]
+  mut revision : Int32
+  max_depth : Int32
+}
+pub fn History::apply(Self, Delta) -> Unit raise DeltaError
+pub fn History::can_redo(Self) -> Bool
+pub fn History::can_undo(Self) -> Bool
+pub fn History::document(Self) -> Delta
+pub fn History::new(Delta, Int32) -> Self raise DeltaError
+pub fn History::redo(Self) -> Bool raise DeltaError
+pub fn History::redo_depth(Self) -> Int32
+pub fn History::revision(Self) -> Int32
+pub fn History::undo(Self) -> Bool raise DeltaError
+pub fn History::undo_depth(Self) -> Int32
+
+pub(all) enum Op {
+  InsertText(String, Json)
+  InsertEmbed(Json, Json)
+  Retain(Int32, Json)
+  RetainEmbed(Json, Json)
+  Delete(Int32)
+} derive(Eq, @debug.Debug)
+pub fn Op::attributes(Self) -> Json
+pub fn Op::equal(Self, Self) -> Bool
+pub fn Op::kind(Self) -> String
+pub fn Op::length(Self) -> Int32
+pub fn Op::not_equal(Self, Self) -> Bool
+pub fn Op::to_repr(Self) -> @debug.Repr
+
+pub struct OpIterator {
+  ops : Array[Op]
+  mut index : Int32
+  mut offset : Int32
+}
+pub fn OpIterator::has_next(Self) -> Bool
+pub fn OpIterator::new(Array[Op]) -> Self
+pub fn OpIterator::next(Self, Int32) -> Op
+pub fn OpIterator::next_full(Self) -> Op
+pub fn OpIterator::peek(Self) -> Op?
+pub fn OpIterator::peek_kind(Self) -> String
+pub fn OpIterator::peek_length(Self) -> Int32
+pub fn OpIterator::rest(Self) -> Array[Op]
+
+// Type aliases
+
+// Traits

@@ -108,7 +108,7 @@ fn Delta::diff_units(self : Delta) -> Array[DiffUnit] {
 
 ///|
 /// Diff with a UTF-16 cursor hint. For a single pure insertion or deletion,
-/// choose the valid edit location nearest the cursor in the target document.
+/// choose the valid edit location nearest the cursor in the original document.
 /// This resolves ambiguous repeated text in favor of the user's edit position.
 /// Other changes use the regular Myers diff.
 pub fn Delta::diff_at(
@@ -119,7 +119,7 @@ pub fn Delta::diff_at(
   if !self.is_document() || !target.is_document() {
     raise Invalid("diff requires two insert-only documents")
   }
-  if cursor < 0 || cursor > target.length() {
+  if cursor < 0 || cursor > self.length() {
     return self.diff(target)
   }
   let old_units = self.diff_units()
@@ -150,9 +150,16 @@ pub fn Delta::diff_at(
     }
     for candidate in 0..=old_length {
       if prefix_ok[candidate] && suffix_ok[candidate] {
-        let last = new_units[candidate + added - 1]
-        let after = last.offset + last.width
-        let distance = if after >= cursor { after - cursor } else { cursor - after }
+        let position = if candidate < old_length {
+          old_units[candidate].offset
+        } else {
+          self.length()
+        }
+        let distance = if position >= cursor {
+          position - cursor
+        } else {
+          cursor - position
+        }
         if distance < best_distance {
           best = candidate
           best_distance = distance
@@ -191,12 +198,12 @@ pub fn Delta::diff_at(
     }
     for candidate in 0..=new_length {
       if prefix_ok[candidate] && suffix_ok[candidate] {
-        let after = if candidate < new_length {
-          new_units[candidate].offset
+        let position = old_units[candidate].offset
+        let distance = if position >= cursor {
+          position - cursor
         } else {
-          target.length()
+          cursor - position
         }
-        let distance = if after >= cursor { after - cursor } else { cursor - after }
         if distance < best_distance {
           best = candidate
           best_distance = distance
