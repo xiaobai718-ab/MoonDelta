@@ -104,6 +104,14 @@ pub fn Delta::each_line(
     }
   }
   if line_start < position {
-    ignore(visit(self.slice(line_start, position), empty_attributes(), line_index))
+    ignore(
+      visit(self.slice(line_start, position), empty_attributes(), line_index),
+    )
   }
 }
+
+///|
+pub extend DeltaLine with Eq::{equal, not_equal}
+
+///|
+pub extend DeltaLine with @moonbitlang/core/debug.Debug::{to_repr}

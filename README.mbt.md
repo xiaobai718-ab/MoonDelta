@@ -92,6 +92,12 @@ The MoonBit 2026-10-16 Windows toolchain can fail while creating a `\\?\` output
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1
 ```
 
+To execute the 38 whitebox tests on Native and JavaScript despite the Windows path issue, the following script copies tracked source files to a short temporary directory, runs both targets, and removes the copy:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-short-path.ps1
+```
+
 ## Compatibility notes
 
 The implementation follows the Quill Delta 5.1 API and JSON semantics, with MoonBit names and explicit handler registries. `Delta::from_json` validates input and normalizes operations, while the JavaScript upstream constructor assumes well-formed input. The `diff_at` cursor hint targets a single pure insertion or deletion; other differences use Myers diff, so the exact edit script can differ from upstream `fast-diff` while producing the same document. The library does not include rendering, a GUI, network synchronization, or CRDT. `History` is local undo/redo and does not rebase stored inverses over remote edits.

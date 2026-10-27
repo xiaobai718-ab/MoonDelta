@@ -147,3 +147,18 @@ pub fn Delta::plain_text(self : Delta) -> String? {
   }
   Some(builder.to_string())
 }
+
+///|
+pub extend Op with Eq::{equal, not_equal}
+
+///|
+pub extend Op with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub extend Delta with Eq::{equal, not_equal}
+
+///|
+pub extend Delta with @moonbitlang/core/debug.Debug::{to_repr}
+
+///|
+pub extend DeltaError with @moonbitlang/core/debug.Debug::{to_repr}
