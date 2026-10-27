@@ -1,0 +1,5 @@
+import {
+  "xiaobai718-ab/moondelta" @lib,
+}
+
+pkgtype(kind: "executable")
