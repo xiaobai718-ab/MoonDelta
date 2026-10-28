@@ -11,6 +11,7 @@ priv struct DiffUnit {
 /// compares Unicode scalar values and indivisible embeds; offsets and lengths
 /// in the resulting Delta are measured in UTF-16 code units.
 pub fn Delta::diff(self : Delta, target : Delta) -> Delta raise DeltaError {
+  if physical_equal(self.ops, target.ops) { return Delta::new() }
   if !self.is_document() || !target.is_document() {
     raise Invalid("diff requires two insert-only documents")
   }
@@ -200,6 +201,7 @@ fn Delta::diff_at_carets(
   cursor : Int32,
   desired_new_caret : Int32?,
 ) -> Delta raise DeltaError {
+  if physical_equal(self.ops, target.ops) { return Delta::new() }
   if !self.is_document() || !target.is_document() {
     raise Invalid("diff requires two insert-only documents")
   }

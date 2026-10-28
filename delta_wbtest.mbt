@@ -636,6 +636,25 @@ test "raw constructor and concat preserve noncanonical interior operations" {
 }
 
 ///|
+test "upstream compose preserves untouched raw operation boundaries" {
+  let raw = Delta::from_ops_raw([
+    InsertText("a", empty_attributes()),
+    InsertText("b", empty_attributes()),
+    InsertText("c", empty_attributes()),
+  ])
+  let unchanged = raw.compose(Delta::new().retain_plain(3))
+  assert_eq(unchanged.count(), 3)
+  assert_eq(unchanged.operations(), raw.operations())
+  let bold = Json::object({ "bold": Json::boolean(true) })
+  let changed = raw.compose(Delta::new().retain(1, bold))
+  assert_eq(changed.operations(), [
+    InsertText("a", bold),
+    InsertText("b", empty_attributes()),
+    InsertText("c", empty_attributes()),
+  ])
+}
+
+///|
 test "slice and iterator default-argument equivalents" {
   let delta = Delta::new().insert_plain("abcd")
   assert_eq(delta.slice_all(), delta)
@@ -1019,6 +1038,14 @@ test "upstream diff rejects non-document inputs" {
     _ => rejected_right = true
   }
   assert_true(rejected_left && rejected_right)
+}
+
+///|
+test "upstream diff returns empty for the exact same operation array" {
+  let operations : Array[Op] = [Retain(1, empty_attributes())]
+  let first = Delta::from_ops_raw(operations)
+  let second = Delta::from_ops_raw(operations)
+  assert_eq(first.diff(second), Delta::new())
 }
 
 ///|

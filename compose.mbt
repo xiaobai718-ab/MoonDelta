@@ -15,6 +15,20 @@ pub fn Delta::compose_with_handlers(
   let left = OpIterator::new(self.ops)
   let right = OpIterator::new(next.ops)
   let result = Delta::new()
+  match right.peek() {
+    Some(Retain(length, attrs)) if no_attributes(attrs) => {
+      let mut remaining = length
+      while left.peek_kind() == "insert" && left.peek_length() <= remaining {
+        let amount = left.peek_length()
+        remaining -= amount
+        result.ops.push(left.next(amount))
+      }
+      if length > remaining {
+        ignore(right.next(length - remaining))
+      }
+    }
+    _ => ()
+  }
   while left.has_next() || right.has_next() {
     if right.peek_kind() == "insert" {
       ignore(result.push(right.next(right.peek_length())))
@@ -40,14 +54,16 @@ pub fn Delta::compose_with_handlers(
           b_attrs,
           a is Retain(_, _),
         )
-        match a {
-          InsertText(text, _) => ignore(result.push(InsertText(text, attrs)))
-          InsertEmbed(embed, _) =>
-            ignore(result.push(InsertEmbed(embed, attrs)))
-          Retain(length, _) => ignore(result.push(Retain(length, attrs)))
-          RetainEmbed(embed, _) =>
-            ignore(result.push(RetainEmbed(embed, attrs)))
-          Delete(_) => ()
+        let composed : Op = match a {
+          InsertText(text, _) => InsertText(text, attrs)
+          InsertEmbed(embed, _) => InsertEmbed(embed, attrs)
+          Retain(length, _) => Retain(length, attrs)
+          RetainEmbed(embed, _) => RetainEmbed(embed, attrs)
+          Delete(_) => continue
+        }
+        ignore(result.push(composed))
+        if !right.has_next() && result.ops[result.ops.length() - 1] == composed {
+          return result.concat(Delta::from_ops_raw(left.rest())).chop()
         }
       }
       RetainEmbed(next_embed, next_attrs) => {
@@ -56,22 +72,31 @@ pub fn Delta::compose_with_handlers(
           next_attrs,
           a is Retain(_, _),
         )
-        match a {
-          Retain(_, _) => ignore(result.push(RetainEmbed(next_embed, attrs)))
+        let composed : Op = match a {
+          Retain(_, _) => RetainEmbed(next_embed, attrs)
           InsertEmbed(original, _) => {
-            let (kind, old_data, change_data) = embed_parts(original, next_embed)
+            let (kind, old_data, change_data) = embed_parts(
+              original, next_embed,
+            )
             let handler = handlers.require(kind)
             let data = (handler.compose_value)(old_data, change_data, false)
-            ignore(result.push(InsertEmbed(wrap_embed(kind, data), attrs)))
+            InsertEmbed(wrap_embed(kind, data), attrs)
           }
           RetainEmbed(original, _) => {
-            let (kind, old_data, change_data) = embed_parts(original, next_embed)
+            let (kind, old_data, change_data) = embed_parts(
+              original, next_embed,
+            )
             let handler = handlers.require(kind)
             let data = (handler.compose_value)(old_data, change_data, true)
-            ignore(result.push(RetainEmbed(wrap_embed(kind, data), attrs)))
+            RetainEmbed(wrap_embed(kind, data), attrs)
           }
-          InsertText(_, _) => raise Invalid("cannot retain a text insert with an embed update")
-          Delete(_) => ()
+          InsertText(_, _) =>
+            raise Invalid("cannot retain a text insert with an embed update")
+          Delete(_) => continue
+        }
+        ignore(result.push(composed))
+        if !right.has_next() && result.ops[result.ops.length() - 1] == composed {
+          return result.concat(Delta::from_ops_raw(left.rest())).chop()
         }
       }
       Delete(_) =>

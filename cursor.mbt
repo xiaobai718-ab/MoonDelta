@@ -36,6 +36,7 @@ pub fn Delta::diff_with_cursor_info(
   target : Delta,
   cursor : CursorInfo,
 ) -> Delta raise DeltaError {
+  if physical_equal(self.ops, target.ops) { return Delta::new() }
   let old_range = cursor.old_range
   let new_range = cursor.new_range
   if old_range.length == 0 && new_range.length == 0 {
