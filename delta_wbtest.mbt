@@ -1239,6 +1239,13 @@ test "compatible JSON constructor preserves raw operation layout" {
 }
 
 ///|
+test "compatible constructor treats missing or invalid ops as empty" {
+  assert_eq(Delta::parse_json_compatible("{}"), Delta::new())
+  assert_eq(Delta::parse_json_compatible("{\"ops\":null}"), Delta::new())
+  assert_eq(Delta::parse_json_compatible("null"), Delta::new())
+}
+
+///|
 test "upstream builders omit null and empty attributes" {
   assert_eq(
     Delta::new().insert_text("a", Json::null()),

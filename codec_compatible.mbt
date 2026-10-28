@@ -9,9 +9,9 @@ pub fn Delta::from_json_compatible(value : Json) -> Delta raise DeltaError {
     Object(fields) =>
       match fields.get("ops") {
         Some(Array(operations)) => operations
-        _ => raise Invalid("$.ops must be an array")
+        _ => []
       }
-    _ => raise Invalid("Delta must be an object or operations array")
+    _ => []
   }
   let operations : Array[Op] = []
   for index, item in items {
