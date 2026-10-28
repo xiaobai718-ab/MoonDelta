@@ -11,120 +11,13 @@ priv struct DiffUnit {
 /// compares Unicode scalar values and indivisible embeds; offsets and lengths
 /// in the resulting Delta are measured in UTF-16 code units.
 pub fn Delta::diff(self : Delta, target : Delta) -> Delta raise DeltaError {
-  if physical_equal(self.ops, target.ops) { return Delta::new() }
+  if physical_equal(self.ops, target.ops) {
+    return Delta::new()
+  }
   if !self.is_document() || !target.is_document() {
     raise Invalid("diff requires two insert-only documents")
   }
-  let old_units = self.diff_units()
-  let new_units = target.diff_units()
-  let old_keys = diff_keys(old_units)
-  let new_keys = diff_keys(new_units)
-  let edits = @diff.Diff(
-    old=old_keys[:],
-    new=new_keys[:],
-    cutoff=old_keys.length() + new_keys.length(),
-  ).edits()
-  let result = Delta::new()
-  for edit_index, edit in edits {
-    match edit {
-      @diff.Equal(old_index~, new_index~, len~) =>
-        if should_absorb_equal(
-            edits, edit_index, old_index, len, old_units, new_units,
-          ) {
-          for index in 0..<len {
-            let unit = new_units[new_index + index]
-            for op in target.slice(unit.offset, unit.offset + unit.width).ops {
-              ignore(result.push(op))
-            }
-            ignore(result.delete(old_units[old_index + index].width))
-          }
-        } else {
-          for index in 0..<len {
-            append_matched_unit(
-              result,
-              old_units[old_index + index],
-              new_units[new_index + index],
-              target,
-            )
-          }
-        }
-      @diff.Delete(old_index~, old_len~, ..) =>
-        for index in old_index..<(old_index + old_len) {
-          ignore(result.delete(old_units[index].width))
-        }
-      @diff.Insert(new_index~, new_len~, ..) =>
-        for index in new_index..<(new_index + new_len) {
-          let unit = new_units[index]
-          for op in target.slice(unit.offset, unit.offset + unit.width).ops {
-            ignore(result.push(op))
-          }
-        }
-    }
-  }
-  result.chop()
-}
-
-///|
-/// Match fast-diff's semantic cleanup for a short unchanged island between
-/// two substantial replacements.
-fn should_absorb_equal(
-  edits : ArrayView[@diff.Edit],
-  position : Int32,
-  old_index : Int32,
-  length : Int32,
-  old_units : Array[DiffUnit],
-  new_units : Array[DiffUnit],
-) -> Bool {
-  if position == 0 || position + 1 >= edits.length() {
-    return false
-  }
-  let mut before_deleted = 0
-  let mut before_inserted = 0
-  let mut index = position - 1
-  while index >= 0 {
-    match edits[index] {
-      @diff.Delete(old_index~, old_len~, ..) =>
-        before_deleted += diff_widths(old_units, old_index, old_len)
-      @diff.Insert(new_index~, new_len~, ..) =>
-        before_inserted += diff_widths(new_units, new_index, new_len)
-      @diff.Equal(..) => break
-    }
-    index -= 1
-  }
-  let mut after_deleted = 0
-  let mut after_inserted = 0
-  index = position + 1
-  while index < edits.length() {
-    match edits[index] {
-      @diff.Delete(old_index~, old_len~, ..) =>
-        after_deleted += diff_widths(old_units, old_index, old_len)
-      @diff.Insert(new_index~, new_len~, ..) =>
-        after_inserted += diff_widths(new_units, new_index, new_len)
-      @diff.Equal(..) => break
-    }
-    index += 1
-  }
-  let before = if before_deleted > before_inserted {
-    before_deleted
-  } else {
-    before_inserted
-  }
-  let after = if after_deleted > after_inserted {
-    after_deleted
-  } else {
-    after_inserted
-  }
-  let equal_width = diff_widths(old_units, old_index, length)
-  before > 0 && after > 0 && equal_width <= before && equal_width <= after
-}
-
-///|
-fn diff_widths(units : Array[DiffUnit], start : Int32, count : Int32) -> Int32 {
-  let mut width = 0
-  for index in start..<(start + count) {
-    width += units[index].width
-  }
-  width
+  self.diff_fast(target)
 }
 
 ///|
@@ -205,7 +98,9 @@ fn Delta::diff_at_carets(
   cursor : Int32,
   desired_new_caret : Int32?,
 ) -> Delta raise DeltaError {
-  if physical_equal(self.ops, target.ops) { return Delta::new() }
+  if physical_equal(self.ops, target.ops) {
+    return Delta::new()
+  }
   if !self.is_document() || !target.is_document() {
     raise Invalid("diff requires two insert-only documents")
   }

@@ -7,7 +7,7 @@ MoonDelta is a MoonBit implementation of the [Quill Delta](https://quilljs.com/d
 - Parse and serialize Quill-style `{"ops":[...]}` JSON with text, embeds, formatting attributes, numeric and embed retains, and deletions. `parse_json_compatible` preserves the operation layout accepted by the JavaScript constructor; `parse_json` validates and normalizes it.
 - Build canonical operation lists with `insert_text`, `insert_embed`, `retain`, `retain_embed`, `delete`, `push`, `chop`, and `concat`.
 - Compose changes, apply them to full documents, invert changes for undo, transform concurrent changes, and transform cursor positions.
-- Diff documents with Myers diff; `diff_at` uses a UTF-16 cursor position in the original document, and `diff_with_cursor_info` accepts explicit old and new ranges.
+- Diff documents with a MoonBit port of fast-diff 1.3.0, including Myers bisect and semantic cleanup; `diff_at` uses a UTF-16 cursor position in the original document, and `diff_with_cursor_info` accepts old and new selection ranges.
 - Visit operations with `filter`, `for_each`, `map`, `partition`, and `reduce`; use `OpIterator` for partial operations.
 - Visit rich-text lines with `each_line`, including delimiter attributes, custom delimiter, and early stop. `lines` returns line records.
 - Register type-specific `EmbedHandler` algorithms for composing, inverting, and transforming retain-embed payload updates, either globally with `Delta::register_embed` or in an explicit `EmbedHandlers` registry.
@@ -92,7 +92,7 @@ The MoonBit 2026-10-16 Windows toolchain can fail while creating a `\\?\` output
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1
 ```
 
-To execute the 84 whitebox tests despite the Windows path issue, the following script copies project source files to a short temporary directory, runs Native and JavaScript, and removes the copy. Pass `-Targets wasm` or `-Targets wasm-gc` for the other backends; both also pass locally:
+To execute the 1547 whitebox tests despite the Windows path issue, the following script copies project source files to a short temporary directory, runs Native and JavaScript, and removes the copy. Pass `-Targets wasm` or `-Targets wasm-gc` for the other backends; both also pass locally:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-short-path.ps1
@@ -106,10 +106,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-interface.p
 
 ## Compatibility notes
 
-The implementation covers Quill Delta 5.1 core operations with MoonBit naming. `Delta::from_json` validates and normalizes input; `Delta::from_json_compatible` and `Delta::from_ops_raw` preserve well-formed operation layout. A numeric `diff_at` hint is the caret position before an edit. `diff_with_cursor_info` accepts Quill-style old and new UTF-16 cursor ranges. The exact edit script can still differ from upstream `fast-diff` while producing the same document. The library does not include rendering, a GUI, network synchronization, or CRDT. `History` is local undo/redo and does not rebase stored inverses over remote edits.
+The implementation covers Quill Delta 5.1's typed operations with MoonBit naming. `Delta::from_json` validates and normalizes input; `Delta::from_json_compatible` and `Delta::from_ops_raw` preserve well-formed operation layout. A numeric `diff_at` hint is the caret position before an edit. `diff_with_cursor_info` accepts Quill-style old and new UTF-16 cursor ranges. The regression suite compares text, Unicode, cursor, compose, transform, and invert results with the upstream implementations. Rare Unicode bisect paths can choose a different valid edit script because MoonBit's `StringView::to_owned` does not preserve isolated UTF-16 surrogates on every backend. The library does not include rendering, a GUI, network synchronization, or CRDT. `History` is local undo/redo and does not rebase stored inverses over remote edits.
 
 The current feature-by-feature status and remaining parity work are listed in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## License
 
-MoonDelta is Apache-2.0 licensed. Quill Delta is a separate BSD-3-Clause project. Its notice is reproduced in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MoonDelta is Apache-2.0 licensed. Quill Delta's BSD-3-Clause and fast-diff's Apache-2.0 notices are reproduced in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

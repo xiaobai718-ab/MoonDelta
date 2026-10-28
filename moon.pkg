@@ -1,5 +1,4 @@
 import {
   "moonbitlang/core/json",
-  "moonbitlang/core/diff",
   "moonbitlang/core/debug",
 }

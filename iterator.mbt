@@ -65,12 +65,27 @@ pub fn OpIterator::next(self : OpIterator, requested : Int32) -> Op {
   }
   match op {
     InsertText(text, attrs) =>
-      InsertText(text[start:start + amount].to_owned(), attrs)
+      InsertText(utf16_substring(text, start, amount), attrs)
     InsertEmbed(embed, attrs) => InsertEmbed(embed, attrs)
     Retain(_, attrs) => Retain(amount, attrs)
     RetainEmbed(embed, attrs) => RetainEmbed(embed, attrs)
     Delete(_) => Delete(amount)
   }
+}
+
+///|
+/// Preserve isolated surrogate halves when an operation boundary falls inside
+/// an emoji. JavaScript's substr() can return such halves; StringView::to_owned
+/// does not preserve them on every MoonBit backend.
+fn utf16_substring(text : String, start : Int32, length : Int32) -> String {
+  if start == 0 && length == text.length() {
+    return text
+  }
+  let units : Array[Char] = []
+  for index in start..<(start + length) {
+    units.push(text.at(index).to_int().unsafe_to_char())
+  }
+  String::from_array(units)
 }
 
 ///|

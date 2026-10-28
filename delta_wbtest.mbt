@@ -926,11 +926,11 @@ test "upstream diff replaces unrelated formatted words" {
 }
 
 ///|
-test "semantic diff absorbs a one-character island between edits" {
+test "semantic diff restores a one-character overlap after cleanup" {
   let before = Delta::new().insert_plain("ab")
   let after = Delta::new().insert_plain("ba")
   let patch = before.diff(after)
-  assert_eq(patch, Delta::new().insert_plain("ba").delete(2))
+  assert_eq(patch, Delta::new().delete(1).retain_plain(1).insert_plain("a"))
   assert_eq(before.apply(patch), after)
 }
 

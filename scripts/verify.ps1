@@ -31,13 +31,11 @@ try {
       & moonc check -no-mi -target $target -pkg 'xiaobai718-ab/moondelta' `
         -pkg-type library -std-path $bundle `
         -i "$(Join-Path $bundle 'json\json.mi'):json" `
-        -i "$(Join-Path $bundle 'diff\diff.mi'):diff" `
         -i "$(Join-Path $bundle 'debug\debug.mi'):debug" @sourceFiles
       Confirm-Exit "check $target"
       & moonc check -no-mi -whitebox-test -target $target `
         -pkg 'xiaobai718-ab/moondelta' -pkg-type library -std-path $bundle `
         -i "$(Join-Path $bundle 'json\json.mi'):json" `
-        -i "$(Join-Path $bundle 'diff\diff.mi'):diff" `
         -i "$(Join-Path $bundle 'debug\debug.mi'):debug" @sourceFiles @whiteboxFiles
       Confirm-Exit "check tests $target"
     }
@@ -47,6 +45,7 @@ try {
   & moonc build-package -target js -pkg 'xiaobai718-ab/moondelta' `
     -pkg-type library -std-path $bundle `
     -i "$(Join-Path $bundle 'json\json.mi'):json" `
+    -i "$(Join-Path $bundle 'debug\debug.mi'):debug" `
     -o 'target/manual/moondelta.core' @sourceFiles
   Confirm-Exit 'build library'
 

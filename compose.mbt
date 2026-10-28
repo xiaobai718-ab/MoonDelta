@@ -57,7 +57,7 @@ pub fn Delta::compose_with_handlers(
         let composed : Op = match a {
           InsertText(text, _) => InsertText(text, attrs)
           InsertEmbed(embed, _) => InsertEmbed(embed, attrs)
-          Retain(length, _) => Retain(length, attrs)
+          Retain(_, _) => Retain(amount, attrs)
           RetainEmbed(embed, _) => RetainEmbed(embed, attrs)
           Delete(_) => continue
         }
