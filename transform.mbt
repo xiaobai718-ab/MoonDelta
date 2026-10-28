@@ -6,7 +6,7 @@ pub fn Delta::transform(
   other : Delta,
   priority : Bool,
 ) -> Delta raise DeltaError {
-  self.transform_with_handlers(other, priority, EmbedHandlers::new())
+  self.transform_with_handlers(other, priority, default_embed_handlers)
 }
 
 ///|

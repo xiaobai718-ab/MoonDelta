@@ -443,6 +443,23 @@ test "each_line accepts custom delimiter and embedded objects" {
 }
 
 ///|
+test "upstream eachLine visits complete prefix lines before a non-insert" {
+  let raw = Delta::from_ops_raw([
+    InsertText("first\nsecond", empty_attributes()),
+    Retain(1, empty_attributes()),
+  ])
+  let seen : Array[String] = []
+  raw.each_line((line, _, _) => {
+    match line.plain_text() {
+      Some(value) => seen.push(value)
+      None => ()
+    }
+    true
+  })
+  assert_eq(seen, ["first"])
+}
+
+///|
 test "large separated diff keeps unchanged interior" {
   let middle = "m".repeat(1500)
   let before = Delta::new().insert_plain("A" + middle + "B")
@@ -474,8 +491,9 @@ test "cursor-aware diff locates repeated-text insertion and deletion" {
   assert_eq(insertion, Delta::new().retain_plain(1).insert_plain("a"))
   assert_eq(old.apply(insertion), longer)
   let deletion = longer.diff_at(old, 1)
-  assert_eq(deletion, Delta::new().retain_plain(1).delete(1))
+  assert_eq(deletion, Delta::new().delete(1))
   assert_eq(longer.apply(deletion), old)
+  assert_eq(longer.diff_at(old, 2), Delta::new().retain_plain(1).delete(1))
 }
 
 ///|
@@ -495,6 +513,8 @@ test "operation iterator splits text and reports exhausted state" {
   assert_eq(iterator.next(2), InsertText("bc", empty_attributes()))
   assert_eq(iterator.peek_length(), 1)
   assert_eq(iterator.rest().length(), 1)
+  assert_true(iterator.has_next())
+  ignore(iterator.next_full())
   assert_true(!iterator.has_next())
 }
 
@@ -573,6 +593,32 @@ test "invalid cursor ranges fall back to a correct diff" {
   let cursor = CursorInfo::new(CursorRange::new(99, 1), CursorRange::new(99, 1))
   let patch = before.diff_with_cursor_info(after, cursor)
   assert_eq(before.apply(patch), after)
+}
+
+///|
+test "upstream cursor selection replaces old range at resulting caret" {
+  let before = Delta::new().insert_plain("xxx")
+  let after = Delta::new().insert_plain("xx")
+  let cursor = CursorInfo::new(CursorRange::new(0, 2), CursorRange::new(1, 0))
+  let patch = before.diff_with_cursor_info(after, cursor)
+  assert_eq(patch, Delta::new().insert_plain("x").delete(2))
+  assert_eq(before.apply(patch), after)
+}
+
+///|
+test "cursor info distinguishes backward deletion from forward deletion" {
+  let before = Delta::new().insert_plain("aaaa")
+  let after = Delta::new().insert_plain("aaa")
+  let backward = CursorInfo::new(CursorRange::new(2, 0), CursorRange::new(1, 0))
+  let forward = CursorInfo::new(CursorRange::new(2, 0), CursorRange::new(2, 0))
+  assert_eq(
+    before.diff_with_cursor_info(after, backward),
+    Delta::new().retain_plain(1).delete(1),
+  )
+  assert_eq(
+    before.diff_with_cursor_info(after, forward),
+    Delta::new().retain_plain(2).delete(1),
+  )
 }
 
 ///|
@@ -697,6 +743,43 @@ test "upstream compose retains beyond inserted text and embed attributes" {
 }
 
 ///|
+test "upstream compose retains at start and joins around deletion" {
+  let bold = Json::object({ "bold": Json::boolean(true) })
+  let source = Delta::new()
+    .insert_text("A", bold)
+    .insert_plain("B")
+    .insert_text("C", bold)
+    .retain_plain(5)
+    .delete(1)
+  let change = Delta::new().retain_plain(4).insert_plain("D")
+  let expected = Delta::new()
+    .insert_text("A", bold)
+    .insert_plain("B")
+    .insert_text("C", bold)
+    .retain_plain(1)
+    .insert_plain("D")
+    .retain_plain(4)
+    .delete(1)
+  assert_eq(source.compose(change), expected)
+  let joined = Delta::new()
+    .insert_text("A", bold)
+    .insert_plain("B")
+    .insert_text("C", bold)
+    .insert_plain("D")
+    .insert_text("E", bold)
+    .insert_plain("F")
+    .compose(Delta::new().retain_plain(1).delete(1))
+  assert_eq(
+    joined,
+    Delta::new()
+    .insert_text("AC", bold)
+    .insert_plain("D")
+    .insert_text("E", bold)
+    .insert_plain("F"),
+  )
+}
+
+///|
 test "upstream transform alternating edits" {
   let first = Delta::new().retain_plain(2).insert_plain("si").delete(5)
   let second = Delta::new()
@@ -717,6 +800,24 @@ test "upstream transform alternating edits" {
     .delete(1)
   assert_eq(first.transform(second, false), expected_first)
   assert_eq(second.transform(first, false), expected_second)
+}
+
+///|
+test "upstream transform conflicting appends and trailing deletes" {
+  let first = Delta::new().retain_plain(3).insert_plain("aa")
+  let second = Delta::new().retain_plain(3).insert_plain("bb")
+  assert_eq(
+    first.transform(second, true),
+    Delta::new().retain_plain(5).insert_plain("bb"),
+  )
+  assert_eq(
+    second.transform(first, false),
+    Delta::new().retain_plain(3).insert_plain("aa"),
+  )
+  let later = Delta::new().retain_plain(2).delete(1)
+  let earlier = Delta::new().delete(3)
+  assert_eq(later.transform(earlier, false), Delta::new().delete(2))
+  assert_eq(earlier.transform(later, false), Delta::new())
 }
 
 ///|
@@ -756,4 +857,559 @@ test "upstream combined inversion restores formatted document" {
   let inverse = change.invert(base)
   assert_eq(inverse, expected)
   assert_eq(base.apply(change).apply(inverse), base)
+}
+
+///|
+test "raw constructor shares operations and slice preserves their boundaries" {
+  let operations : Array[Op] = [
+    InsertText("a", empty_attributes()),
+    InsertText("b", empty_attributes()),
+  ]
+  let raw = Delta::from_ops_raw(operations)
+  assert_eq(raw.slice_all().count(), 2)
+  assert_eq(raw.slice_all().operations(), operations)
+  operations.push(InsertText("c", empty_attributes()))
+  assert_eq(raw.count(), 3)
+}
+
+///|
+test "push deep clones embed payload and attributes" {
+  let nested : Map[String, Json] = { "url": Json::string("old") }
+  let embed : Map[String, Json] = { "image": Json::object(nested) }
+  let attributes : Map[String, Json] = { "bold": Json::boolean(true) }
+  let document = Delta::new().insert_embed(
+    Json::object(embed),
+    Json::object(attributes),
+  )
+  nested.set("url", Json::string("new"))
+  embed.set("image", Json::string("replaced"))
+  attributes.set("bold", Json::boolean(false))
+  let expected = Delta::new().insert_embed(
+    Json::object({ "image": Json::object({ "url": Json::string("old") }) }),
+    Json::object({ "bold": Json::boolean(true) }),
+  )
+  assert_eq(document, expected)
+}
+
+///|
+test "upstream diff replaces unrelated formatted words" {
+  let old = Delta::new()
+    .insert_text("Bad", Json::object({ "color": Json::string("red") }))
+    .insert_text("cat", Json::object({ "color": Json::string("blue") }))
+  let target = Delta::new()
+    .insert_text("Good", Json::object({ "bold": Json::boolean(true) }))
+    .insert_text("dog", Json::object({ "italic": Json::boolean(true) }))
+  let expected = Delta::new()
+    .insert_text("Good", Json::object({ "bold": Json::boolean(true) }))
+    .insert_text("dog", Json::object({ "italic": Json::boolean(true) }))
+    .delete(6)
+  assert_eq(old.diff(target), expected)
+}
+
+///|
+test "semantic diff absorbs a one-character island between edits" {
+  let before = Delta::new().insert_plain("ab")
+  let after = Delta::new().insert_plain("ba")
+  let patch = before.diff(after)
+  assert_eq(patch, Delta::new().insert_plain("ba").delete(2))
+  assert_eq(before.apply(patch), after)
+}
+
+///|
+test "semantic diff measures emoji equalities in UTF-16 code units" {
+  let before = Delta::new().insert_plain("a😀b")
+  let after = Delta::new().insert_plain("x😀y")
+  let patch = before.diff(after)
+  assert_eq(before.apply(patch), after)
+  assert_eq(
+    patch,
+    Delta::new()
+    .insert_plain("x")
+    .delete(1)
+    .retain_plain(2)
+    .insert_plain("y")
+    .delete(1),
+  )
+}
+
+///|
+test "upstream diff simple insert delete and formatting fixtures" {
+  let a = Delta::new().insert_plain("A")
+  assert_eq(
+    a.diff(Delta::new().insert_plain("AB")),
+    Delta::new().retain_plain(1).insert_plain("B"),
+  )
+  assert_eq(
+    Delta::new().insert_plain("AB").diff(a),
+    Delta::new().retain_plain(1).delete(1),
+  )
+  assert_eq(a.diff(a), Delta::new())
+  let bold = Json::object({ "bold": Json::boolean(true) })
+  assert_eq(
+    a.diff(Delta::new().insert_text("A", bold)),
+    Delta::new().retain(1, bold),
+  )
+}
+
+///|
+test "upstream diff deep object attributes and embed mutation" {
+  let font = Json::object({
+    "font": Json::object({
+      "family": Json::string("Helvetica"),
+      "size": Json::string("15px"),
+    }),
+  })
+  let first = Delta::new().insert_text("A", font)
+  let second = Delta::new().insert_text("A", clone_json(font))
+  assert_eq(first.diff(second), Delta::new())
+  let payload : Map[String, Json] = { "image": Json::string("old") }
+  let before = Delta::new().insert_embed(
+    Json::object(payload),
+    empty_attributes(),
+  )
+  payload.set("image", Json::string("new"))
+  let after = Delta::new().insert_embed(
+    Json::object(payload),
+    empty_attributes(),
+  )
+  let expected = Delta::new()
+    .insert_embed(
+      Json::object({ "image": Json::string("new") }),
+      empty_attributes(),
+    )
+    .delete(1)
+  assert_eq(before.diff(after), expected)
+}
+
+///|
+test "upstream diff replaces multi-key embed with one-key embed" {
+  let before = Delta::new().insert_embed(
+    Json::object({
+      "image": Json::string("url"),
+      "alt": Json::string("overwrite"),
+    }),
+    empty_attributes(),
+  )
+  let after = Delta::new().insert_embed(
+    Json::object({ "image": Json::string("url") }),
+    empty_attributes(),
+  )
+  assert_eq(after.diff(after), Delta::new())
+  assert_eq(
+    before.diff(after),
+    Delta::new()
+    .insert_embed(
+      Json::object({ "image": Json::string("url") }),
+      empty_attributes(),
+    )
+    .delete(1),
+  )
+}
+
+///|
+test "upstream diff rejects non-document inputs" {
+  let document = Delta::new().insert_plain("A")
+  let change = Delta::new().retain_plain(1).insert_plain("B")
+  let mut rejected_left = false
+  let mut rejected_right = false
+  ignore(document.diff(change)) catch {
+    _ => rejected_left = true
+  }
+  ignore(change.diff(document)) catch {
+    _ => rejected_right = true
+  }
+  assert_true(rejected_left && rejected_right)
+}
+
+///|
+test "upstream iterator rest does not advance its cursor" {
+  let bold = Json::object({ "bold": Json::boolean(true) })
+  let delta = Delta::new()
+    .insert_text("Hello", bold)
+    .retain_plain(3)
+    .insert_embed(
+      Json::object({ "embed": Json::number(2) }),
+      Json::object({ "src": Json::string("url") }),
+    )
+    .delete(4)
+  let iterator = delta.iterator()
+  assert_eq(iterator.next(2), InsertText("He", bold))
+  let remaining = iterator.rest()
+  assert_eq(remaining.length(), 4)
+  assert_eq(remaining[0], InsertText("llo", bold))
+  assert_eq(iterator.peek_length(), 3)
+  assert_eq(iterator.next(10), InsertText("llo", bold))
+  assert_eq(iterator.rest().length(), 3)
+  assert_eq(iterator.next(3), Retain(3, empty_attributes()))
+  assert_eq(iterator.rest().length(), 2)
+}
+
+///|
+test "upstream transform position fixtures" {
+  assert_eq(Delta::new().insert_plain("A").transform_position(2, false), 3)
+  assert_eq(
+    Delta::new().retain_plain(2).insert_plain("A").transform_position(1, false),
+    1,
+  )
+  let at = Delta::new().retain_plain(2).insert_plain("A")
+  assert_eq(at.transform_position(2, true), 2)
+  assert_eq(at.transform_position(2, false), 3)
+  assert_eq(Delta::new().delete(2).transform_position(4, false), 2)
+  assert_eq(
+    Delta::new().retain_plain(4).delete(2).transform_position(2, false),
+    2,
+  )
+  assert_eq(
+    Delta::new().retain_plain(1).delete(4).transform_position(2, false),
+    1,
+  )
+  assert_eq(
+    Delta::new()
+    .retain_plain(2)
+    .insert_plain("A")
+    .delete(2)
+    .transform_position(4, false),
+    3,
+  )
+  assert_eq(
+    Delta::new()
+    .retain_plain(2)
+    .insert_plain("A")
+    .delete(4)
+    .transform_position(4, false),
+    3,
+  )
+  assert_eq(
+    Delta::new()
+    .delete(1)
+    .retain_plain(1)
+    .delete(4)
+    .transform_position(4, false),
+    1,
+  )
+}
+
+///|
+test "upstream attribute compose cases" {
+  let base = Json::object({
+    "bold": Json::boolean(true),
+    "color": Json::string("red"),
+  })
+  assert_eq(
+    attributes_compose(
+      base,
+      Json::object({ "italic": Json::boolean(true) }),
+      false,
+    ),
+    Json::object({
+      "bold": Json::boolean(true),
+      "italic": Json::boolean(true),
+      "color": Json::string("red"),
+    }),
+  )
+  assert_eq(
+    attributes_compose(
+      base,
+      Json::object({
+        "bold": Json::boolean(false),
+        "color": Json::string("blue"),
+      }),
+      false,
+    ),
+    Json::object({ "bold": Json::boolean(false), "color": Json::string("blue") }),
+  )
+  assert_eq(
+    attributes_compose(base, Json::object({ "bold": Json::null() }), false),
+    Json::object({ "color": Json::string("red") }),
+  )
+  assert_eq(
+    attributes_compose(
+      base,
+      Json::object({ "bold": Json::null(), "color": Json::null() }),
+      false,
+    ),
+    empty_attributes(),
+  )
+  assert_eq(
+    attributes_compose(base, Json::object({ "italic": Json::null() }), false),
+    base,
+  )
+}
+
+///|
+test "upstream attribute diff cases" {
+  let base = Json::object({
+    "bold": Json::boolean(true),
+    "color": Json::string("red"),
+  })
+  assert_eq(attributes_diff(base, base), empty_attributes())
+  assert_eq(
+    attributes_diff(
+      base,
+      Json::object({
+        "bold": Json::boolean(true),
+        "italic": Json::boolean(true),
+        "color": Json::string("red"),
+      }),
+    ),
+    Json::object({ "italic": Json::boolean(true) }),
+  )
+  assert_eq(
+    attributes_diff(base, Json::object({ "bold": Json::boolean(true) })),
+    Json::object({ "color": Json::null() }),
+  )
+  assert_eq(
+    attributes_diff(
+      base,
+      Json::object({
+        "bold": Json::boolean(true),
+        "color": Json::string("blue"),
+      }),
+    ),
+    Json::object({ "color": Json::string("blue") }),
+  )
+}
+
+///|
+test "upstream attribute invert combined case" {
+  let change = Json::object({
+    "bold": Json::boolean(true),
+    "italic": Json::null(),
+    "color": Json::string("red"),
+    "size": Json::string("12px"),
+  })
+  let base = Json::object({
+    "font": Json::string("serif"),
+    "italic": Json::boolean(true),
+    "color": Json::string("blue"),
+    "size": Json::string("12px"),
+  })
+  assert_eq(
+    attributes_invert(change, base),
+    Json::object({
+      "bold": Json::null(),
+      "italic": Json::boolean(true),
+      "color": Json::string("blue"),
+    }),
+  )
+}
+
+///|
+test "upstream attribute transform priority cases" {
+  let left = Json::object({
+    "bold": Json::boolean(true),
+    "color": Json::string("red"),
+    "font": Json::null(),
+  })
+  let right = Json::object({
+    "color": Json::string("blue"),
+    "font": Json::string("serif"),
+    "italic": Json::boolean(true),
+  })
+  assert_eq(
+    attributes_transform(left, right, true),
+    Json::object({ "italic": Json::boolean(true) }),
+  )
+  assert_eq(attributes_transform(left, right, false), right)
+}
+
+///|
+test "compatible JSON constructor preserves raw operation layout" {
+  let source = "{\"ops\":[{\"insert\":\"a\"},{\"insert\":\"b\"},{\"insert\":\"\"},{\"insert\":{\"image\":\"url\",\"alt\":\"caption\"}}]}"
+  let raw = Delta::parse_json_compatible(source)
+  assert_eq(raw.count(), 4)
+  assert_eq(raw.operations()[0], InsertText("a", empty_attributes()))
+  assert_eq(raw.operations()[1], InsertText("b", empty_attributes()))
+  assert_eq(raw.operations()[2], InsertText("", empty_attributes()))
+  assert_eq(
+    raw.operations()[3],
+    InsertEmbed(
+      Json::object({
+        "image": Json::string("url"),
+        "alt": Json::string("caption"),
+      }),
+      empty_attributes(),
+    ),
+  )
+  let mut strict_rejected = false
+  ignore(Delta::parse_json(source)) catch {
+    _ => strict_rejected = true
+  }
+  assert_true(strict_rejected)
+}
+
+///|
+test "upstream builders omit null and empty attributes" {
+  assert_eq(
+    Delta::new().insert_text("a", Json::null()),
+    Delta::new().insert_plain("a"),
+  )
+  assert_eq(
+    Delta::new().insert_text("a", empty_attributes()),
+    Delta::new().insert_plain("a"),
+  )
+  assert_eq(
+    Delta::new().retain(2, Json::null()).delete(1),
+    Delta::new().retain_plain(2).delete(1),
+  )
+  assert_eq(
+    Delta::new().insert_embed(
+      Json::object({ "embed": Json::number(1) }),
+      Json::null(),
+    ),
+    Delta::new().insert_embed(
+      Json::object({ "embed": Json::number(1) }),
+      empty_attributes(),
+    ),
+  )
+}
+
+///|
+test "global embed registration supports default Delta methods" {
+  Delta::register_embed(
+    "global_counter",
+    EmbedHandler::new(
+      (base, update, _) => {
+        Json::number(counter_number(base) + counter_number(update))
+      },
+      (update, _) => Json::number(-counter_number(update)),
+      (_, other, _) => other,
+    ),
+  )
+  let base = Delta::new().insert_embed(
+    Json::object({ "global_counter": Json::number(5) }),
+    empty_attributes(),
+  )
+  let update = Delta::new().retain_embed(
+    Json::object({ "global_counter": Json::number(2) }),
+    empty_attributes(),
+  )
+  let changed = base.apply(update)
+  assert_eq(
+    changed,
+    Delta::new().insert_embed(
+      Json::object({ "global_counter": Json::number(7) }),
+      empty_attributes(),
+    ),
+  )
+  assert_eq(changed.apply(update.invert(base)), base)
+  Delta::unregister_embed("global_counter")
+  let mut rejected = false
+  ignore(base.apply(update)) catch {
+    _ => rejected = true
+  }
+  assert_true(rejected)
+}
+
+///|
+fn nested_delta_ops(document : Delta) -> Json {
+  match document.to_json() {
+    Object(fields) =>
+      match fields.get("ops") {
+        Some(value) => value
+        None => Json::array([])
+      }
+    _ => Json::array([])
+  }
+}
+
+///|
+test "upstream nested Delta embed handler composes inverts and transforms" {
+  let handlers = EmbedHandlers::new()
+  handlers.register(
+    "delta",
+    EmbedHandler::new(
+      (base, change, _) => {
+        nested_delta_ops(
+          Delta::from_json_compatible(base).compose(
+            Delta::from_json_compatible(change),
+          ),
+        )
+      },
+      (change, base) => {
+        nested_delta_ops(
+          Delta::from_json_compatible(change).invert(
+            Delta::from_json_compatible(base),
+          ),
+        )
+      },
+      (first, second, priority) => {
+        nested_delta_ops(
+          Delta::from_json_compatible(first).transform(
+            Delta::from_json_compatible(second),
+            priority,
+          ),
+        )
+      },
+    ),
+  )
+  let base = Delta::new().insert_embed(
+    Json::object({
+      "delta": Json::array([Json::object({ "insert": Json::string("a") })]),
+    }),
+    empty_attributes(),
+  )
+  let change = Delta::new().retain_embed(
+    Json::object({
+      "delta": Json::array([Json::object({ "insert": Json::string("b") })]),
+    }),
+    empty_attributes(),
+  )
+  let expected = Delta::new().insert_embed(
+    Json::object({
+      "delta": Json::array([Json::object({ "insert": Json::string("ba") })]),
+    }),
+    empty_attributes(),
+  )
+  assert_eq(base.compose_with_handlers(change, handlers), expected)
+  let inverse = change.invert_with_handlers(base, handlers)
+  assert_eq(expected.compose_with_handlers(inverse, handlers), base)
+  let transformed = change.transform_with_handlers(change, true, handlers)
+  assert_eq(transformed.count(), 1)
+}
+
+///|
+test "upstream push merging and ordering fixtures" {
+  let bold = Json::object({ "bold": Json::boolean(true) })
+  assert_eq(
+    Delta::new().insert_plain("a").delete(1).insert_plain("b"),
+    Delta::new().insert_plain("ab").delete(1),
+  )
+  assert_eq(Delta::new().delete(2).delete(3), Delta::new().delete(5))
+  assert_eq(
+    Delta::new().insert_text("a", bold).insert_text("b", bold),
+    Delta::new().insert_text("ab", bold),
+  )
+  assert_eq(
+    Delta::new().retain(1, bold).retain(3, bold),
+    Delta::new().retain(4, bold),
+  )
+  assert_eq(Delta::new().insert_text("a", bold).insert_plain("b").count(), 2)
+  assert_eq(Delta::new().retain(1, bold).retain_plain(3).count(), 2)
+  let embed = Json::object({ "embed": Json::number(1) })
+  assert_eq(
+    Delta::new().insert_embed(embed, bold).insert_embed(embed, bold).count(),
+    2,
+  )
+  assert_eq(
+    Delta::new().insert_plain("").delete(0).retain_plain(0),
+    Delta::new(),
+  )
+}
+
+///|
+test "direct push preserves zero length operations while builders skip them" {
+  let raw = Delta::new()
+  ignore(raw.push(Delete(0)))
+  assert_eq(raw.operations(), [Delete(0)])
+  let builders = Delta::new()
+  ignore(builders.delete(0).retain_plain(0).insert_plain(""))
+  assert_eq(builders.count(), 0)
+}
+
+///|
+test "iterator next with zero length consumes the full operation" {
+  let iterator = Delta::new().insert_plain("abc").iterator()
+  assert_eq(iterator.next(0), InsertText("abc", empty_attributes()))
+  assert_true(!iterator.has_next())
 }

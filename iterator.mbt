@@ -51,7 +51,11 @@ pub fn OpIterator::next(self : OpIterator, requested : Int32) -> Op {
   }
   let op = self.ops[self.index]
   let remaining = op.length() - self.offset
-  let amount = if requested < remaining { requested } else { remaining }
+  let amount = if requested == 0 || requested >= remaining {
+    remaining
+  } else {
+    requested
+  }
   let start = self.offset
   if amount == remaining {
     self.index += 1
@@ -72,26 +76,31 @@ pub fn OpIterator::next(self : OpIterator, requested : Int32) -> Op {
 ///|
 pub fn OpIterator::rest(self : OpIterator) -> Array[Op] {
   let out : Array[Op] = []
-  while self.has_next() {
-    out.push(self.next(self.peek_length()))
+  let cursor : OpIterator = {
+    ops: self.ops,
+    index: self.index,
+    offset: self.offset,
+  }
+  while cursor.has_next() {
+    out.push(cursor.next(cursor.peek_length()))
   }
   out
 }
 
 ///|
 pub fn Delta::slice(self : Delta, start : Int32, end : Int32) -> Delta {
-  let result = Delta::new()
+  let result : Array[Op] = []
   let iter = OpIterator::new(self.ops)
   let mut index = 0
   while index < end && iter.has_next() {
     let amount = if index < start { start - index } else { end - index }
     let op = iter.next(amount)
     if index >= start {
-      ignore(result.push(op))
+      result.push(op)
     }
     index += op.length()
   }
-  result
+  Delta::from_ops_raw(result)
 }
 
 ///|

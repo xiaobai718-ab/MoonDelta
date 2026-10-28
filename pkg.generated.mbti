@@ -55,6 +55,7 @@ pub fn Delta::equal(Self, Self) -> Bool
 pub fn Delta::filter(Self, (Op, Int32) -> Bool) -> Array[Op]
 pub fn Delta::for_each(Self, (Op, Int32) -> Unit) -> Unit
 pub fn Delta::from_json(Json) -> Self raise DeltaError
+pub fn Delta::from_json_compatible(Json) -> Self raise DeltaError
 pub fn Delta::from_ops(Array[Op]) -> Self
 pub fn Delta::from_ops_raw(Array[Op]) -> Self
 pub fn Delta::insert_embed(Self, Json, Json) -> Self
@@ -73,10 +74,12 @@ pub fn Delta::new() -> Self
 pub fn Delta::not_equal(Self, Self) -> Bool
 pub fn Delta::operations(Self) -> Array[Op]
 pub fn Delta::parse_json(String) -> Self raise DeltaError
+pub fn Delta::parse_json_compatible(String) -> Self raise DeltaError
 pub fn Delta::partition(Self, (Op) -> Bool) -> (Array[Op], Array[Op])
 pub fn Delta::plain_text(Self) -> String?
 pub fn Delta::push(Self, Op) -> Self
 pub fn[T] Delta::reduce(Self, T, (T, Op, Int32) -> T) -> T
+pub fn Delta::register_embed(String, EmbedHandler) -> Unit raise DeltaError
 pub fn Delta::retain(Self, Int32, Json) -> Self
 pub fn Delta::retain_embed(Self, Json, Json) -> Self
 pub fn Delta::retain_plain(Self, Int32) -> Self
@@ -89,6 +92,7 @@ pub fn Delta::to_repr(Self) -> @debug.Repr
 pub fn Delta::transform(Self, Self, Bool) -> Self raise DeltaError
 pub fn Delta::transform_position(Self, Int32, Bool) -> Int32
 pub fn Delta::transform_with_handlers(Self, Self, Bool, EmbedHandlers) -> Self raise DeltaError
+pub fn Delta::unregister_embed(String) -> Unit
 
 pub(all) struct DeltaLine {
   content : Delta

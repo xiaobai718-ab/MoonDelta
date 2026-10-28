@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('native', 'js')]
+  [ValidateSet('native', 'js', 'wasm', 'wasm-gc')]
   [string[]]$Targets = @('native', 'js')
 )
 

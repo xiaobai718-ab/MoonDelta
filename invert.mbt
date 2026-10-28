@@ -3,7 +3,7 @@
 /// document. The base is required because deleted content is absent from a
 /// Delta change.
 pub fn Delta::invert(self : Delta, base : Delta) -> Delta raise DeltaError {
-  self.invert_with_handlers(base, EmbedHandlers::new())
+  self.invert_with_handlers(base, default_embed_handlers)
 }
 
 ///|

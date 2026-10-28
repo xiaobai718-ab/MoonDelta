@@ -55,18 +55,15 @@ pub fn Delta::line_count(self : Delta) -> Int32 raise DeltaError {
 }
 
 ///|
-/// Visit lines in an insert-only document. The callback receives the line
-/// without its delimiter, the attributes of the delimiter, and a zero-based
-/// line number. Returning false stops traversal. Non-document deltas visit no lines. The final unterminated line
-/// is visited only when it contains content.
+/// Visit lines while operations remain inserts. The callback receives the
+/// line without its delimiter, delimiter attributes, and a zero-based line
+/// number. Returning false stops traversal. A non-insert stops iteration;
+/// any preceding complete lines have already been visited.
 pub fn Delta::each_line(
   self : Delta,
   visit : (Delta, Json, Int32) -> Bool,
   newline~ : String = "\n",
 ) -> Unit raise DeltaError {
-  if !self.is_document() {
-    return
-  }
   if newline.length() == 0 {
     raise Invalid("newline delimiter cannot be empty")
   }
@@ -100,7 +97,7 @@ pub fn Delta::each_line(
         position += text.length()
       }
       InsertEmbed(_, _) => position += 1
-      _ => ()
+      _ => return
     }
   }
   if line_start < position {

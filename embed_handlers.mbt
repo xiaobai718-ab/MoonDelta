@@ -81,3 +81,21 @@ fn wrap_embed(embed_type : String, data : Json) -> Json {
   fields.set(embed_type, data)
   Json::object(fields)
 }
+
+///|
+let default_embed_handlers : EmbedHandlers = EmbedHandlers::new()
+
+///|
+/// Register the default handler for an embed type, as in Quill Delta's
+/// registerEmbed. Explicit registries remain available for isolated editors.
+pub fn Delta::register_embed(
+  embed_type : String,
+  handler : EmbedHandler,
+) -> Unit raise DeltaError {
+  default_embed_handlers.register(embed_type, handler)
+}
+
+///|
+pub fn Delta::unregister_embed(embed_type : String) -> Unit {
+  default_embed_handlers.unregister(embed_type)
+}

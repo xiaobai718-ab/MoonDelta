@@ -16,18 +16,32 @@ pub fn Delta::diff(self : Delta, target : Delta) -> Delta raise DeltaError {
   }
   let old_units = self.diff_units()
   let new_units = target.diff_units()
-  let embeds : Array[Json] = []
-  let old_keys = diff_keys(old_units, embeds)
-  let new_keys = diff_keys(new_units, embeds)
+  let old_keys = diff_keys(old_units)
+  let new_keys = diff_keys(new_units)
   let edits = @diff.Diff(old=old_keys[:], new=new_keys[:]).edits()
   let result = Delta::new()
-  for edit in edits {
+  for edit_index, edit in edits {
     match edit {
       @diff.Equal(old_index~, new_index~, len~) =>
-        for index in 0..<len {
-          append_matched_unit(
-            result, old_units[old_index + index], new_units[new_index + index],
-          )
+        if should_absorb_equal(
+            edits, edit_index, old_index, len, old_units, new_units,
+          ) {
+          for index in 0..<len {
+            let unit = new_units[new_index + index]
+            for op in target.slice(unit.offset, unit.offset + unit.width).ops {
+              ignore(result.push(op))
+            }
+            ignore(result.delete(old_units[old_index + index].width))
+          }
+        } else {
+          for index in 0..<len {
+            append_matched_unit(
+              result,
+              old_units[old_index + index],
+              new_units[new_index + index],
+              target,
+            )
+          }
         }
       @diff.Delete(old_index~, old_len~, ..) =>
         for index in old_index..<(old_index + old_len) {
@@ -46,35 +60,97 @@ pub fn Delta::diff(self : Delta, target : Delta) -> Delta raise DeltaError {
 }
 
 ///|
-fn diff_keys(units : Array[DiffUnit], embeds : Array[Json]) -> Array[Int32] {
+/// Match fast-diff's semantic cleanup for a short unchanged island between
+/// two substantial replacements.
+fn should_absorb_equal(
+  edits : ArrayView[@diff.Edit],
+  position : Int32,
+  old_index : Int32,
+  length : Int32,
+  old_units : Array[DiffUnit],
+  new_units : Array[DiffUnit],
+) -> Bool {
+  if position == 0 || position + 1 >= edits.length() {
+    return false
+  }
+  let mut before_deleted = 0
+  let mut before_inserted = 0
+  let mut index = position - 1
+  while index >= 0 {
+    match edits[index] {
+      @diff.Delete(old_index~, old_len~, ..) =>
+        before_deleted += diff_widths(old_units, old_index, old_len)
+      @diff.Insert(new_index~, new_len~, ..) =>
+        before_inserted += diff_widths(new_units, new_index, new_len)
+      @diff.Equal(..) => break
+    }
+    index -= 1
+  }
+  let mut after_deleted = 0
+  let mut after_inserted = 0
+  index = position + 1
+  while index < edits.length() {
+    match edits[index] {
+      @diff.Delete(old_index~, old_len~, ..) =>
+        after_deleted += diff_widths(old_units, old_index, old_len)
+      @diff.Insert(new_index~, new_len~, ..) =>
+        after_inserted += diff_widths(new_units, new_index, new_len)
+      @diff.Equal(..) => break
+    }
+    index += 1
+  }
+  let before = if before_deleted > before_inserted {
+    before_deleted
+  } else {
+    before_inserted
+  }
+  let after = if after_deleted > after_inserted {
+    after_deleted
+  } else {
+    after_inserted
+  }
+  let equal_width = diff_widths(old_units, old_index, length)
+  before > 0 && after > 0 && equal_width <= before && equal_width <= after
+}
+
+///|
+fn diff_widths(units : Array[DiffUnit], start : Int32, count : Int32) -> Int32 {
+  let mut width = 0
+  for index in start..<(start + count) {
+    width += units[index].width
+  }
+  width
+}
+
+///|
+fn diff_keys(units : Array[DiffUnit]) -> Array[Int32] {
   let keys : Array[Int32] = []
   for unit in units {
     match unit.token {
       Number(value, ..) => keys.push(value.to_int())
-      _ => {
-        let mut found = -1
-        for index in 0..<embeds.length() {
-          if embeds[index] == unit.token {
-            found = index
-            break
-          }
-        }
-        if found < 0 {
-          embeds.push(unit.token)
-          found = embeds.length() - 1
-        }
-        keys.push(-found - 1)
-      }
+      _ => keys.push(0)
     }
   }
   keys
 }
 
 ///|
-fn append_matched_unit(result : Delta, old : DiffUnit, new : DiffUnit) -> Unit {
-  ignore(
-    result.retain(old.width, attributes_diff(old.attributes, new.attributes)),
-  )
+fn append_matched_unit(
+  result : Delta,
+  old : DiffUnit,
+  new : DiffUnit,
+  target : Delta,
+) -> Unit {
+  if old.token != new.token {
+    for op in target.slice(new.offset, new.offset + new.width).ops {
+      ignore(result.push(op))
+    }
+    ignore(result.delete(old.width))
+  } else {
+    ignore(
+      result.retain(old.width, attributes_diff(old.attributes, new.attributes)),
+    )
+  }
 }
 
 ///|
@@ -105,16 +181,24 @@ fn Delta::diff_units(self : Delta) -> Array[DiffUnit] {
   result
 }
 
-
 ///|
-/// Diff with a UTF-16 cursor hint. For a single pure insertion or deletion,
-/// choose the valid edit location nearest the cursor in the original document.
-/// This resolves ambiguous repeated text in favor of the user's edit position.
-/// Other changes use the regular Myers diff.
+/// Diff with the cursor convention used by fast-diff: first try an edit
+/// immediately before the old caret, then an edit immediately after it.
+/// The hint is ignored when neither splice produces the target text.
 pub fn Delta::diff_at(
   self : Delta,
   target : Delta,
   cursor : Int32,
+) -> Delta raise DeltaError {
+  self.diff_at_carets(target, cursor, None)
+}
+
+///|
+fn Delta::diff_at_carets(
+  self : Delta,
+  target : Delta,
+  cursor : Int32,
+  desired_new_caret : Int32?,
 ) -> Delta raise DeltaError {
   if !self.is_document() || !target.is_document() {
     raise Invalid("diff requires two insert-only documents")
@@ -124,105 +208,108 @@ pub fn Delta::diff_at(
   }
   let old_units = self.diff_units()
   let new_units = target.diff_units()
-  let old_length = old_units.length()
-  let new_length = new_units.length()
-  if old_length == new_length {
+  let old_keys = diff_keys(old_units)
+  let new_keys = diff_keys(new_units)
+  let old_caret = unit_index_at(old_units, cursor, self.length())
+  if old_caret < 0 {
     return self.diff(target)
   }
-  let embeds : Array[Json] = []
-  let old_keys = diff_keys(old_units, embeds)
-  let new_keys = diff_keys(new_units, embeds)
-  let mut best = -1
-  let mut best_distance = 2147483647
-  if new_length > old_length {
-    let added = new_length - old_length
-    let prefix_ok = Array::make(old_length + 1, false)
-    let suffix_ok = Array::make(old_length + 1, false)
-    prefix_ok[0] = true
-    suffix_ok[old_length] = true
-    for index in 0..<old_length {
-      prefix_ok[index + 1] = prefix_ok[index] && old_keys[index] == new_keys[index]
+  let after_caret64 = cursor.to_int64() +
+    target.length().to_int64() -
+    self.length().to_int64()
+  if after_caret64 >= 0L && after_caret64 <= target.length().to_int64() {
+    let new_caret_position = after_caret64.to_int()
+    let new_caret = unit_index_at(
+      new_units,
+      new_caret_position,
+      target.length(),
+    )
+    let caret_matches = match desired_new_caret {
+      None => true
+      Some(value) => value == new_caret_position
     }
-    for step in 0..<old_length {
-      let index = old_length - step - 1
-      suffix_ok[index] = suffix_ok[index + 1] &&
-        old_keys[index] == new_keys[index + added]
-    }
-    for candidate in 0..=old_length {
-      if prefix_ok[candidate] && suffix_ok[candidate] {
-        let position = if candidate < old_length {
-          old_units[candidate].offset
-        } else {
-          self.length()
-        }
-        let distance = if position >= cursor {
-          position - cursor
-        } else {
-          cursor - position
-        }
-        if distance < best_distance {
-          best = candidate
-          best_distance = distance
-        }
+    if new_caret >= 0 && caret_matches {
+      let start = if cursor < new_caret_position {
+        cursor
+      } else {
+        new_caret_position
       }
-    }
-    if best >= 0 {
-      let result = Delta::new()
-      for index in 0..<best {
-        append_matched_unit(result, old_units[index], new_units[index])
-      }
-      for index in best..<(best + added) {
-        let unit = new_units[index]
-        for op in target.slice(unit.offset, unit.offset + unit.width).ops {
-          ignore(result.push(op))
-        }
-      }
-      for index in best..<old_length {
-        append_matched_unit(result, old_units[index], new_units[index + added])
-      }
-      return result.chop()
-    }
-  } else {
-    let removed = old_length - new_length
-    let prefix_ok = Array::make(new_length + 1, false)
-    let suffix_ok = Array::make(new_length + 1, false)
-    prefix_ok[0] = true
-    suffix_ok[new_length] = true
-    for index in 0..<new_length {
-      prefix_ok[index + 1] = prefix_ok[index] && old_keys[index] == new_keys[index]
-    }
-    for step in 0..<new_length {
-      let index = new_length - step - 1
-      suffix_ok[index] = suffix_ok[index + 1] &&
-        old_keys[index + removed] == new_keys[index]
-    }
-    for candidate in 0..=new_length {
-      if prefix_ok[candidate] && suffix_ok[candidate] {
-        let position = old_units[candidate].offset
-        let distance = if position >= cursor {
-          position - cursor
-        } else {
-          cursor - position
-        }
-        if distance < best_distance {
-          best = candidate
-          best_distance = distance
-        }
+      let old_start = unit_index_at(old_units, start, self.length())
+      let new_start = unit_index_at(new_units, start, target.length())
+      if old_start >= 0 &&
+        new_start >= 0 &&
+        placeholder_range_equal(old_keys, 0, old_start, new_keys, 0, new_start) &&
+        placeholder_range_equal(
+          old_keys,
+          old_caret,
+          old_keys.length(),
+          new_keys,
+          new_caret,
+          new_keys.length(),
+        ) {
+        return self.diff_splice(
+          target,
+          CursorRange::new(start, cursor - start),
+          CursorRange::new(start, new_caret_position - start),
+        )
       }
     }
-    if best >= 0 {
-      let result = Delta::new()
-      for index in 0..<best {
-        append_matched_unit(result, old_units[index], new_units[index])
-      }
-      for index in best..<(best + removed) {
-        ignore(result.delete(old_units[index].width))
-      }
-      for index in best..<new_length {
-        append_matched_unit(result, old_units[index + removed], new_units[index])
-      }
-      return result.chop()
+  }
+  let new_caret = unit_index_at(new_units, cursor, target.length())
+  let after_caret_matches = match desired_new_caret {
+    None => true
+    Some(value) => value == cursor
+  }
+  if new_caret >= 0 &&
+    after_caret_matches &&
+    placeholder_range_equal(old_keys, 0, old_caret, new_keys, 0, new_caret) {
+    let old_after = self.length() - cursor
+    let new_after = target.length() - cursor
+    let suffix_length = if old_after < new_after {
+      old_after
+    } else {
+      new_after
+    }
+    let old_suffix_start = self.length() - suffix_length
+    let new_suffix_start = target.length() - suffix_length
+    let old_suffix = unit_index_at(old_units, old_suffix_start, self.length())
+    let new_suffix = unit_index_at(new_units, new_suffix_start, target.length())
+    if old_suffix >= 0 &&
+      new_suffix >= 0 &&
+      placeholder_range_equal(
+        old_keys,
+        old_suffix,
+        old_keys.length(),
+        new_keys,
+        new_suffix,
+        new_keys.length(),
+      ) {
+      return self.diff_splice(
+        target,
+        CursorRange::new(cursor, old_suffix_start - cursor),
+        CursorRange::new(cursor, new_suffix_start - cursor),
+      )
     }
   }
   self.diff(target)
+}
+
+///|
+fn placeholder_range_equal(
+  old : Array[Int32],
+  old_start : Int32,
+  old_end : Int32,
+  new : Array[Int32],
+  new_start : Int32,
+  new_end : Int32,
+) -> Bool {
+  if old_end - old_start != new_end - new_start {
+    return false
+  }
+  for index in 0..<(old_end - old_start) {
+    if old[old_start + index] != new[new_start + index] {
+      return false
+    }
+  }
+  true
 }

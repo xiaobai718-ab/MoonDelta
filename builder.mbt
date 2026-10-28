@@ -1,10 +1,7 @@
 ///|
 /// Append an operation while maintaining Quill's canonical operation order.
-pub fn Delta::push(self : Delta, op : Op) -> Delta {
-  let length = op.length()
-  if length <= 0 {
-    return self
-  }
+pub fn Delta::push(self : Delta, value : Op) -> Delta {
+  let op = clone_op(value)
   let count = self.ops.length()
   if count == 0 {
     self.ops.push(op)
@@ -42,11 +39,13 @@ pub fn Delta::insert_text(
   text : String,
   attributes : Json,
 ) -> Delta {
-  self.push(InsertText(text, attributes))
+  if text.length() == 0 { return self }
+  self.push(InsertText(text, builder_attributes(attributes)))
 }
 
 ///|
 pub fn Delta::insert_plain(self : Delta, text : String) -> Delta {
+  if text.length() == 0 { return self }
   self.push(InsertText(text, empty_attributes()))
 }
 
@@ -56,16 +55,18 @@ pub fn Delta::insert_embed(
   embed : Json,
   attributes : Json,
 ) -> Delta {
-  self.push(InsertEmbed(embed, attributes))
+  self.push(InsertEmbed(embed, builder_attributes(attributes)))
 }
 
 ///|
 pub fn Delta::retain(self : Delta, length : Int32, attributes : Json) -> Delta {
-  self.push(Retain(length, attributes))
+  if length <= 0 { return self }
+  self.push(Retain(length, builder_attributes(attributes)))
 }
 
 ///|
 pub fn Delta::retain_plain(self : Delta, length : Int32) -> Delta {
+  if length <= 0 { return self }
   self.push(Retain(length, empty_attributes()))
 }
 
@@ -75,11 +76,12 @@ pub fn Delta::retain_embed(
   embed : Json,
   attributes : Json,
 ) -> Delta {
-  self.push(RetainEmbed(embed, attributes))
+  self.push(RetainEmbed(embed, builder_attributes(attributes)))
 }
 
 ///|
 pub fn Delta::delete(self : Delta, length : Int32) -> Delta {
+  if length <= 0 { return self }
   self.push(Delete(length))
 }
 
@@ -106,4 +108,13 @@ pub fn Delta::concat(self : Delta, other : Delta) -> Delta {
     }
   }
   result
+}
+
+
+///|
+fn builder_attributes(attributes : Json) -> Json {
+  match attributes {
+    Object(map) if !map.is_empty() => attributes
+    _ => empty_attributes()
+  }
 }

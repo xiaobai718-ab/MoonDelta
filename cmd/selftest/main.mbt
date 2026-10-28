@@ -201,7 +201,7 @@ fn main raise {
   check(
     "cursor-aware delete",
     repeated_longer.diff_at(repeated, 1) ==
-    @lib.Delta::new().retain_plain(1).delete(1),
+    @lib.Delta::new().delete(1),
   )
   let non_document_lines : Array[@lib.Delta] = []
   @lib.Delta::new()
@@ -214,7 +214,9 @@ fn main raise {
   let iterator = @lib.Delta::new().insert_plain("abc").iterator()
   check("iterator peek", iterator.peek_length() == 3)
   check("iterator split", iterator.next(1).length() == 1)
-  check("iterator rest", iterator.rest().length() == 1 && !iterator.has_next())
+  check("iterator rest", iterator.rest().length() == 1 && iterator.has_next())
+  ignore(iterator.next_full())
+  check("iterator exhausted", !iterator.has_next())
   let mut ot_cases = 0
   for text in ["", "a", "ab", "abc", "abcd"] {
     let document = @lib.Delta::new().insert_plain(text)

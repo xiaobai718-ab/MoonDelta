@@ -2,7 +2,7 @@
 /// Apply `next` after this Delta. A document composed with a change yields a
 /// new document; composing two changes yields one equivalent change.
 pub fn Delta::compose(self : Delta, next : Delta) -> Delta raise DeltaError {
-  self.compose_with_handlers(next, EmbedHandlers::new())
+  self.compose_with_handlers(next, default_embed_handlers)
 }
 
 ///|
@@ -89,7 +89,7 @@ pub fn Delta::compose_with_handlers(
 ///|
 /// Apply a change to a full insert-only document.
 pub fn Delta::apply(self : Delta, change : Delta) -> Delta raise DeltaError {
-  self.apply_with_handlers(change, EmbedHandlers::new())
+  self.apply_with_handlers(change, default_embed_handlers)
 }
 
 ///|

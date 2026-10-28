@@ -79,6 +79,9 @@ pub fn Delta::new() -> Delta {
 pub fn Delta::from_ops(ops : Array[Op]) -> Delta {
   let delta = Delta::new()
   for op in ops {
+    if op.length() <= 0 {
+      continue
+    }
     ignore(delta.push(op))
   }
   delta
@@ -87,13 +90,10 @@ pub fn Delta::from_ops(ops : Array[Op]) -> Delta {
 ///|
 /// Construct a Delta from operations without normalizing their order or
 /// merging adjacent operations, matching Quill Delta's array constructor.
-/// Callers must supply well-formed operations.
+/// Callers must supply well-formed operations. The array is shared, as in
+/// the JavaScript constructor.
 pub fn Delta::from_ops_raw(operations : Array[Op]) -> Delta {
-  let copy : Array[Op] = []
-  for operation in operations {
-    copy.push(operation)
-  }
-  { ops: copy, }
+  { ops: operations, }
 }
 
 ///|
