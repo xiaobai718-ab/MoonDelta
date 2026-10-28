@@ -1348,7 +1348,12 @@ fn nested_delta_ops(document : Delta) -> Json {
 }
 
 ///|
-test "upstream nested Delta embed handler composes inverts and transforms" {
+fn nested_embed(document : Delta) -> Json {
+  Json::object({ "delta": nested_delta_ops(document) })
+}
+
+///|
+fn nested_delta_handlers() -> EmbedHandlers raise DeltaError {
   let handlers = EmbedHandlers::new()
   handlers.register(
     "delta",
@@ -1377,6 +1382,12 @@ test "upstream nested Delta embed handler composes inverts and transforms" {
       },
     ),
   )
+  handlers
+}
+
+///|
+test "upstream nested Delta embed handler composes inverts and transforms" {
+  let handlers = nested_delta_handlers()
   let base = Delta::new().insert_embed(
     Json::object({
       "delta": Json::array([Json::object({ "insert": Json::string("a") })]),
@@ -1400,6 +1411,109 @@ test "upstream nested Delta embed handler composes inverts and transforms" {
   assert_eq(expected.compose_with_handlers(inverse, handlers), base)
   let transformed = change.transform_with_handlers(change, true, handlers)
   assert_eq(transformed.count(), 1)
+}
+
+///|
+test "upstream nested embed composes numeric retain and concurrent updates" {
+  let handlers = nested_delta_handlers()
+  let bold = Json::object({ "bold": Json::boolean(true) })
+  let update = nested_embed(Delta::new().insert_plain("b"))
+  assert_eq(
+    Delta::new()
+    .retain(10, bold)
+    .compose_with_handlers(
+      Delta::new().retain_embed(update, empty_attributes()),
+      handlers,
+    ),
+    Delta::new().retain_embed(update, bold).retain(9, bold),
+  )
+  let first = Delta::new().retain_embed(
+    nested_embed(Delta::new().insert_plain("a")),
+    empty_attributes(),
+  )
+  let second = Delta::new().retain_embed(update, empty_attributes())
+  assert_eq(
+    first.transform_with_handlers(second, true, handlers),
+    Delta::new().retain_embed(
+      nested_embed(Delta::new().retain_plain(1).insert_plain("b")),
+      empty_attributes(),
+    ),
+  )
+  assert_eq(first.transform_with_handlers(second, false, handlers), second)
+}
+
+///|
+test "upstream nested embed inversion restores multiple embedded documents" {
+  let handlers = nested_delta_handlers()
+  let base = Delta::new()
+    .insert_plain("\n")
+    .insert_embed(
+      nested_embed(Delta::new().insert_plain("a")),
+      empty_attributes(),
+    )
+    .insert_embed(
+      nested_embed(Delta::new().insert_plain("b")),
+      empty_attributes(),
+    )
+  let delete_inner = nested_embed(Delta::new().delete(1))
+  let change = Delta::new()
+    .retain_plain(1)
+    .retain_embed(delete_inner, empty_attributes())
+    .retain_embed(delete_inner, empty_attributes())
+  let inverse = change.invert_with_handlers(base, handlers)
+  assert_eq(
+    inverse,
+    Delta::new()
+    .retain_plain(1)
+    .retain_embed(
+      nested_embed(Delta::new().insert_plain("a")),
+      empty_attributes(),
+    )
+    .retain_embed(
+      nested_embed(Delta::new().insert_plain("b")),
+      empty_attributes(),
+    ),
+  )
+  assert_eq(
+    base
+    .compose_with_handlers(change, handlers)
+    .compose_with_handlers(inverse, handlers),
+    base,
+  )
+}
+
+///|
+test "upstream nested embed inversion restores block and embed attributes" {
+  let handlers = nested_delta_handlers()
+  let change = Delta::new()
+    .delete(1)
+    .retain(1, Json::object({ "header": Json::number(2) }))
+    .retain_embed(
+      nested_embed(Delta::new().insert_plain("b")),
+      Json::object({ "padding": Json::number(10), "margin": Json::number(0) }),
+    )
+  let base = Delta::new()
+    .insert_plain("\n")
+    .insert_text("\n", Json::object({ "header": Json::number(1) }))
+    .insert_embed(
+      nested_embed(Delta::new().insert_plain("a")),
+      Json::object({ "margin": Json::number(10) }),
+    )
+  let expected = Delta::new()
+    .insert_plain("\n")
+    .retain(1, Json::object({ "header": Json::number(1) }))
+    .retain_embed(
+      nested_embed(Delta::new().delete(1)),
+      Json::object({ "padding": Json::null(), "margin": Json::number(10) }),
+    )
+  let inverse = change.invert_with_handlers(base, handlers)
+  assert_eq(inverse, expected)
+  assert_eq(
+    base
+    .compose_with_handlers(change, handlers)
+    .compose_with_handlers(inverse, handlers),
+    base,
+  )
 }
 
 ///|

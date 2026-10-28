@@ -19,7 +19,11 @@ pub fn Delta::diff(self : Delta, target : Delta) -> Delta raise DeltaError {
   let new_units = target.diff_units()
   let old_keys = diff_keys(old_units)
   let new_keys = diff_keys(new_units)
-  let edits = @diff.Diff(old=old_keys[:], new=new_keys[:]).edits()
+  let edits = @diff.Diff(
+    old=old_keys[:],
+    new=new_keys[:],
+    cutoff=old_keys.length() + new_keys.length(),
+  ).edits()
   let result = Delta::new()
   for edit_index, edit in edits {
     match edit {
