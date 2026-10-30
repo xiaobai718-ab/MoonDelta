@@ -71,11 +71,21 @@ The runnable example is in [cmd/main/main.mbt](cmd/main/main.mbt); the executabl
 
 MoonDelta requires `moonc` 0.10.16 or newer. Check your installation with `moon version --all`.
 
-After publication to Mooncakes, install the library with:
+Version 0.1.0 is [published on Mooncakes](https://mooncakes.io/docs/xiaobai718-ab/moondelta@0.1.0). Install it with:
 
 ```text
-moon add xiaobai718-ab/moondelta
+moon add xiaobai718-ab/moondelta@0.1.0
 ```
+
+Then import the package in the consuming package's `moon.pkg`:
+
+```moonbit
+import {
+  "xiaobai718-ab/moondelta" @delta,
+}
+```
+
+Use `@delta.Delta::new()` and the methods shown above. A fresh consumer project installing 0.1.0 and applying a text edit passes tests on all four targets.
 
 On a supported MoonBit installation:
 
