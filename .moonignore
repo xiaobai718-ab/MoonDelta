@@ -1,0 +1,12 @@
+/_build/
+/target/
+/*_wbtest.mbt
+/scripts/
+/*.ast
+/*.core
+/*.mi
+/*.typechecked
+/*.js
+/*.mjs
+/*.d.ts
+/cmd/*/pkg.generated.mbti

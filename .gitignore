@@ -11,3 +11,4 @@ target
 /*.js
 /*.mjs
 /*.d.ts
+/cmd/*/pkg.generated.mbti

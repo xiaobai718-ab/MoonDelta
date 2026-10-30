@@ -69,7 +69,9 @@ The runnable example is in [cmd/main/main.mbt](cmd/main/main.mbt); the executabl
 
 ## Install and verify
 
-After publication to Mooncakes:
+MoonDelta requires `moonc` 0.10.16 or newer. Check your installation with `moon version --all`.
+
+After publication to Mooncakes, install the library with:
 
 ```text
 moon add xiaobai718-ab/moondelta
@@ -78,21 +80,21 @@ moon add xiaobai718-ab/moondelta
 On a supported MoonBit installation:
 
 ```text
-moon check --target native
-moon check --target js
-moon check --target wasm
-moon check --target wasm-gc
-moon test
-moon run cmd/main
+moon check --target all --deny-warn
+moon build --target all --deny-warn
+moon test --target all --deny-warn
+moon run --target js cmd/main
 ```
 
-The MoonBit 2026-10-16 Windows toolchain can fail while creating a `\\?\` output path for `moon check`, `moon test`, `moon info`, and `moon fmt` in this workspace. The direct compiler script checks the library and whitebox test sources on all four targets, then runs the JavaScript selftest (121 text-diff pairs, 410 concurrent-transform pairs, and focused API checks):
+The first three commands check, build, and run 1547 tests on Native, JavaScript, Wasm, and Wasm GC. The example prints `{"ops":[{"insert":"Hello MoonBit\n"}]}`. GitHub Actions runs the same commands on every push and pull request.
+
+If a Windows installation fails while creating a `\\?\` output path in a long workspace path, the direct compiler script checks the library and whitebox test sources on all four targets, then runs the JavaScript selftest (121 text-diff pairs, 410 concurrent-transform pairs, and focused API checks):
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1
 ```
 
-To execute the 1547 whitebox tests despite the Windows path issue, the following script copies project source files to a short temporary directory, runs Native and JavaScript, and removes the copy. Pass `-Targets wasm` or `-Targets wasm-gc` for the other backends; both also pass locally:
+To execute the whitebox tests despite that Windows path issue, the following script copies project source files to a short temporary directory, runs Native and JavaScript, and removes the copy. Pass `-Targets wasm` or `-Targets wasm-gc` for the other backends:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-short-path.ps1
@@ -103,6 +105,8 @@ Regenerate the public MoonBit interface from the same short-path workspace:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-interface.ps1
 ```
+
+Before a release, run `moon package --list` to inspect the Mooncakes archive. The `.moonignore` file excludes generated files, scripts, and test fixtures from the published package while keeping them in the GitHub repository. Publishing uses `moon publish` after signing in with `moon login`.
 
 ## Compatibility notes
 

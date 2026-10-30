@@ -15,14 +15,25 @@ jobs:
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
       - name: Show toolchain
-        run: moon version --all
-      - name: Check native and web targets
         run: |
-          moon check --target native
-          moon check --target js
-          moon check --target wasm
-          moon check --target wasm-gc
-      - name: Run tests
-        run: |
-          moon test --target native
-          moon test --target js
+          moon version --all
+          version=$(moon version --all | sed -n 's/^moonc v\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\).*/\1 \2 \3/p')
+          if [[ -z "$version" ]]; then
+            echo "Could not determine moonc version" >&2
+            exit 1
+          fi
+          read -r major minor patch <<< "$version"
+          if (( major == 0 && (minor < 10 || (minor == 10 && patch < 16)) )); then
+            echo "moonc 0.10.16 or newer is required" >&2
+            exit 1
+          fi
+      - name: Check all targets
+        run: moon check --target all --deny-warn
+      - name: Build all targets
+        run: moon build --target all --deny-warn
+      - name: Test all targets
+        run: moon test --target all --deny-warn
+      - name: Run example
+        run: moon run --target js cmd/main
+      - name: Inspect publish archive
+        run: moon package --list
